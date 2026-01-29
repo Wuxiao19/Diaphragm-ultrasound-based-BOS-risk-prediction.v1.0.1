@@ -16,9 +16,11 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import re
 from pathlib import Path
-from typing import Dict, Any
+from typing import Dict, Any, List
 
+import pandas as pd
 from dotenv import load_dotenv
 from fastmcp import Client
 from openai import OpenAI
@@ -126,12 +128,24 @@ QWEN_SYSTEM_PROMPT = """
 - 对于单个患者：merged_key、risk_probability、prediction、prediction_label 等字段；
 - 对于多个患者：上述字段的列表、总样本数、平均风险等信息。
 
+其中 merged_key 的格式为：
+- 形如 "YY-MM-DD-C123"、"YY-MM-DD-B123" 或 "YY-MM-DD-P123"；
+- 前面的 "YY-MM-DD" 表示检查日期（20YY 年 MM 月 DD 日）；
+- 后面的 "C123/B123/P123" 表示患者 ID。
+
+当同一个患者 ID（例如 C113）在不同日期（例如 25-11-08 和 25-12-01）均出现时，表示该患者存在“复检”或“多次随访”。
+
 你的任务：
 1. 用清晰、专业但尽量易懂的中文解释这些检测结果的含义；
-2. 根据 risk_probability 对风险进行分级（如很低、较低、中等、较高、很高）；
-3. 如果是批量结果，请指出其中明显高风险的患者（例如风险概率 > 0.7），并列出他们的 ID 和概率；
-4. 给出 1~3 条临床或管理上的建议（例如是否需要进一步检查、随访、注意点等）；
-5. 明确提醒：这是基于图像的机器学习模型结果，不能替代医生的最终诊断。
+2. 根据 risk_probability 对风险进行分级（如很低、较低、中等、较高、很高），并给出合理的阈值说明；
+3. 如果是批量结果：
+   - 指出明显高风险的患者（例如 risk_probability > 0.7），并列出他们的 ID、检查日期和概率；
+   - 特别关注同一患者 ID 在不同日期的多次检查（复检情况），对这些患者做“纵向随访式”的综合分析，比较不同日期的风险变化趋势；
+4. 如果检测结果中存在“缺失模态”的情况（例如只有 B 没有 M，或只有 M 没有 B），应在报告中单独说明：
+   - 说明缺失的是哪一种模态（B 或 M）；
+   - 简要分析缺失数据可能对风险判断带来的不确定性；
+5. 在给出结论时，至少给出 1~3 条临床或管理上的建议（例如是否需要进一步检查、复查、随访、康复训练或临床评估等）；
+6. 明确提醒：这是基于图像的机器学习模型结果，不能替代医生的最终诊断，最终结论需要结合临床情况由医生判断。
 """
 
 
@@ -303,6 +317,115 @@ QWEN_TOOLS = [
 ]
 
 
+def _parse_merged_key(merged_key: str) -> tuple[str | None, str | None]:
+    """
+    解析 merged_key，例如 "25-11-08-C113" -> ("25-11-08", "C113")
+    """
+    if not isinstance(merged_key, str):
+        return None, None
+    m = re.match(r"(\d{2}-\d{2}-\d{2})-(C\d{3}|B\d{3}|P\d{3})", merged_key)
+    if not m:
+        return None, None
+    return m.group(1), m.group(2)
+
+
+def _build_detection_summary_from_tool_result(tool_result: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    根据 MCP 工具返回的结果（单个或批量），构造一个结构化的总结 JSON，
+    包含：按患者 ID 的汇总信息、复检情况、以及缺失模态统计（如有）。
+    """
+    # 1) 统一整理 items 列表
+    if "items" in tool_result:
+        mode = "batch"
+        raw_items: List[Dict[str, Any]] = list(tool_result.get("items") or [])
+    else:
+        mode = "single"
+        raw_items = [tool_result]
+
+    items_enriched: List[Dict[str, Any]] = []
+    for r in raw_items:
+        merged_key = str(r.get("merged_key", "") or r.get("merged_filename", ""))
+        date_str, pid = _parse_merged_key(merged_key)
+        items_enriched.append(
+            {
+                "merged_key": merged_key,
+                "date": date_str,
+                "patient_id": pid,
+                "risk_probability": float(r.get("risk_probability", 0.0)),
+                "prediction": int(r.get("prediction", 0)),
+                "prediction_label": str(r.get("prediction_label", "")),
+                "b_image": str(r.get("b_image", r.get("b_filename", ""))),
+                "m_image": str(r.get("m_image", r.get("m_filename", ""))),
+            }
+        )
+
+    # 2) 识别复检患者（同一 patient_id 多个不同日期）
+    visits_by_pid: Dict[str, List[Dict[str, Any]]] = {}
+    for it in items_enriched:
+        pid = it.get("patient_id")
+        if not pid:
+            continue
+        visits_by_pid.setdefault(pid, []).append(it)
+
+    recheck_patients: List[Dict[str, Any]] = []
+    for pid, visits in visits_by_pid.items():
+        dates = sorted({v.get("date") for v in visits if v.get("date")})
+        if len(dates) > 1:
+            # 多个日期，视为复检
+            recheck_patients.append(
+                {
+                    "patient_id": pid,
+                    "exam_dates": dates,
+                    "visits": sorted(
+                        visits, key=lambda x: (str(x.get("date") or ""), x.get("merged_key", ""))
+                    ),
+                }
+            )
+
+    # 3) 缺失模态统计（依赖 missing_modality_samples.csv，如存在）
+    missing_summary: Dict[str, Any] | None = None
+    detect_output_dir = tool_result.get("detect_output_dir")
+    if isinstance(detect_output_dir, str) and detect_output_dir:
+        missing_csv_path = os.path.join(detect_output_dir, "missing_modality_samples.csv")
+        if os.path.exists(missing_csv_path):
+            try:
+                df_missing = pd.read_csv(missing_csv_path)
+                total_missing = int(len(df_missing))
+                by_type = (
+                    df_missing["missing_modality"].value_counts().to_dict()
+                    if "missing_modality" in df_missing.columns
+                    else {}
+                )
+                by_patient: Dict[str, int] = {}
+                if "pid" in df_missing.columns:
+                    by_patient = df_missing["pid"].value_counts().to_dict()
+                missing_summary = {
+                    "total_missing_samples": total_missing,
+                    "missing_by_type": by_type,
+                    "missing_by_patient": by_patient,
+                    "csv_path": missing_csv_path,
+                }
+            except Exception:
+                # 读取失败则忽略缺失统计，避免中断主流程
+                missing_summary = None
+
+    # 4) 汇总整体信息
+    all_probs = [it["risk_probability"] for it in items_enriched]
+    avg_prob = float(sum(all_probs) / len(all_probs)) if all_probs else 0.0
+
+    summary: Dict[str, Any] = {
+        "mode": mode,
+        "total_samples": len(items_enriched),
+        "average_probability": avg_prob,
+        "items": items_enriched,
+        "recheck_patients": recheck_patients,
+    }
+    if missing_summary is not None:
+        summary["missing_modality_summary"] = missing_summary
+
+    return summary
+
+
 async def _call_mcp_tool(tool_name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
     """
     由 Agent 示例使用：根据工具名和参数真正调用 MCP 工具。
@@ -419,6 +542,7 @@ async def run_qwen_agent(
 
     tool_calls_info = []
     tool_results_dict = {}
+    detection_summary: Dict[str, Any] | None = None
 
     # 如果没有 tool_calls，直接返回模型回答
     if not assistant_msg.tool_calls:
@@ -452,7 +576,35 @@ async def run_qwen_agent(
             }
         )
 
-    # 步骤3：让 Qwen 基于工具结果给出最终总结
+        # 顺便尝试构建一个结构化的汇总（只需构建一次即可）
+        if detection_summary is None and isinstance(tool_result, dict):
+            try:
+                detection_summary = _build_detection_summary_from_tool_result(tool_result)
+            except Exception:
+                detection_summary = None
+
+    # 如果成功构建了结构化汇总，把它作为额外提示信息给到 Qwen，
+    # 明确要求在最终回答中参考其中的复检信息和缺失模态信息。
+    if detection_summary is not None:
+        summary_str = json.dumps(detection_summary, ensure_ascii=False, indent=2)
+        messages.append(
+            {
+                "role": "user",
+                "content": (
+                    "下面是系统根据检测工具返回结果整理出的结构化总结 JSON，"
+                    "其中已经提取了每个样本的 merged_key（检查日期 + 患者 ID）、"
+                    "复检患者列表（同一 ID 在不同日期的多次检查）、以及缺失模态统计信息：\n\n"
+                    f"{summary_str}\n\n"
+                    "在给出最终中文报告时，请务必：\n"
+                    "1）正确理解 merged_key 中的检查日期和患者 ID；\n"
+                    "2）特别指出有哪些患者存在复检，并比较不同日期之间的风险变化；\n"
+                    "3）如果存在缺失模态（missing modality），在报告中单独说明这一点及其对结论的不确定性影响；\n"
+                    "4）其余要求仍然按系统提示中的说明执行。"
+                ),
+            }
+        )
+
+    # 步骤3：让 Qwen 基于工具结果和结构化总结给出最终回答
     second = client.chat.completions.create(
         model=model,
         messages=messages,
@@ -479,7 +631,7 @@ async def run_agent_example() -> None:
         print("❌ 示例 B/M 图片路径不存在，请先修改 deepseek_ultrasound_agent.py 中的路径。")
         return
 
-    api_key = "s"
+    api_key = "sk-jxyjpsqvzxdabusdngydpvsxxf"
 
     print("==============================================")
     print("  运行 Qwen Agent（让 Qwen 自己调用工具）")
@@ -518,6 +670,5 @@ async def main() -> None:
 
 if __name__ == "__main__":
     asyncio.run(main())
-
 
 
