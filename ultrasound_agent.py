@@ -479,7 +479,7 @@ async def run_agent_example() -> None:
         print("❌ 示例 B/M 图片路径不存在，请先修改 deepseek_ultrasound_agent.py 中的路径。")
         return
 
-    api_key = "sk-jxyjpsqvzxdabusdngydpvsxxf"
+    api_key = "s"
 
     print("==============================================")
     print("  运行 Qwen Agent（让 Qwen 自己调用工具）")
@@ -518,5 +518,6 @@ async def main() -> None:
 
 if __name__ == "__main__":
     asyncio.run(main())
+
 
 
