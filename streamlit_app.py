@@ -399,6 +399,68 @@ if "last_results_df" in st.session_state and "last_output_dir" in st.session_sta
         mime="text/csv",
     )
 
+    # Missing modality samples
+    missing_df = st.session_state.get("last_missing_df")
+    missing_csv_path = os.path.join(output_dir, "missing_modality_samples.csv")
+
+    # If we don't have it in session_state but the CSV exists on disk, try to load it
+    if (missing_df is None or missing_df.empty) and os.path.exists(missing_csv_path):
+        try:
+            missing_df = pd.read_csv(missing_csv_path)
+            st.session_state["last_missing_df"] = missing_df
+        except Exception:
+            missing_df = None
+
+    if missing_df is not None and not missing_df.empty:
+        st.warning(
+            "Some samples are missing B or M modality and were excluded from prediction. "
+            "Download the missing list to verify your data."
+        )
+        with st.expander("Show list of samples with missing modality (downloadable)", expanded=False):
+            st.dataframe(missing_df)
+            st.download_button(
+                label="Download missing modality CSV",
+                data=missing_df.to_csv(index=False, encoding="utf-8-sig"),
+                file_name="missing_modality_samples.csv",
+                mime="text/csv",
+            )
+
+    # Recheck detection for batch patients
+    if is_folder and "merged_filename" in results_df.columns:
+        pattern = re.compile(r"(\d{2}-\d{2}-\d{2})-(C\d{3}|B\d{3}|P\d{3})")
+
+        def _parse_merged(name: str):
+            m = pattern.match(str(name))
+            if m:
+                return m.group(1), m.group(2)
+            return None, None
+
+        temp = results_df.copy()
+        temp[["date", "patient_id"]] = temp["merged_filename"].apply(
+            lambda x: pd.Series(_parse_merged(x))
+        )
+        temp = temp.dropna(subset=["date", "patient_id"])
+
+        if not temp.empty:
+            date_counts = temp.groupby("patient_id")["date"].nunique()
+            recheck_ids = date_counts[date_counts > 1].index.tolist()
+
+            recheck_df = temp[temp["patient_id"].isin(recheck_ids)].copy()
+
+            if not recheck_df.empty:
+                st.warning(
+                    "Recheck detected: some patient IDs have examinations on different dates. "
+                    "You can download a CSV containing only these recheck cases."
+                )
+                st.download_button(
+                    label="Download recheck result CSV",
+                    data=recheck_df[key_cols].to_csv(
+                        index=False, encoding="utf-8-sig"
+                    ),
+                    file_name="recheck_result.csv",
+                    mime="text/csv",
+                )
+
 
 # ============================================================
 # 全局：Qwen Agent 模式（不再强制依赖 Run inference）
@@ -516,69 +578,6 @@ if st.button("🚀 启动 Qwen Agent（自动调用检测工具）", type="prima
             import traceback
             with st.expander("查看详细错误信息", expanded=False):
                 st.code(traceback.format_exc())
-
-
-    # Missing modality samples
-    missing_df = st.session_state.get("last_missing_df")
-    missing_csv_path = os.path.join(output_dir, "missing_modality_samples.csv")
-
-    # If we don't have it in session_state but the CSV exists on disk, try to load it
-    if (missing_df is None or missing_df.empty) and os.path.exists(missing_csv_path):
-        try:
-            missing_df = pd.read_csv(missing_csv_path)
-            st.session_state["last_missing_df"] = missing_df
-        except Exception:
-            missing_df = None
-
-    if missing_df is not None and not missing_df.empty:
-        st.warning(
-            "Some samples are missing B or M modality and were excluded from prediction. "
-            "Download the missing list to verify your data."
-        )
-        with st.expander("Show list of samples with missing modality (downloadable)", expanded=False):
-            st.dataframe(missing_df)
-            st.download_button(
-                label="Download missing modality CSV",
-                data=missing_df.to_csv(index=False, encoding="utf-8-sig"),
-                file_name="missing_modality_samples.csv",
-                mime="text/csv",
-            )
-
-    # Recheck detection for batch patients
-    if is_folder and "merged_filename" in results_df.columns:
-        pattern = re.compile(r"(\d{2}-\d{2}-\d{2})-(C\d{3}|B\d{3}|P\d{3})")
-
-        def _parse_merged(name: str):
-            m = pattern.match(str(name))
-            if m:
-                return m.group(1), m.group(2)
-            return None, None
-
-        temp = results_df.copy()
-        temp[["date", "patient_id"]] = temp["merged_filename"].apply(
-            lambda x: pd.Series(_parse_merged(x))
-        )
-        temp = temp.dropna(subset=["date", "patient_id"])
-
-        if not temp.empty:
-            date_counts = temp.groupby("patient_id")["date"].nunique()
-            recheck_ids = date_counts[date_counts > 1].index.tolist()
-
-            recheck_df = temp[temp["patient_id"].isin(recheck_ids)].copy()
-
-            if not recheck_df.empty:
-                st.warning(
-                    "Recheck detected: some patient IDs have examinations on different dates. "
-                    "You can download a CSV containing only these recheck cases."
-                )
-                st.download_button(
-                    label="Download recheck result CSV",
-                    data=recheck_df[key_cols].to_csv(
-                        index=False, encoding="utf-8-sig"
-                    ),
-                    file_name="recheck_result.csv",
-                    mime="text/csv",
-                )
 
 
 st.markdown("---")
