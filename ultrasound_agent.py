@@ -194,58 +194,6 @@ async def qwen_explain_detection(
 
 
 # ============================================================
-# 示例 1：单组 B/M + Qwen 解释（你之前已经验证通过的简单链路）
-# ============================================================
-
-
-async def run_single_example() -> None:
-    """
-    示例：一组 B/M 图片 → MCP 检测 → Qwen 解释。
-
-    你可以先用你之前已经跑通的那组图片路径，确认整个链路没问题。
-    """
-    # 你可以把这里换成你自己的图片路径
-    b_image_path = r"D:\A_SJTU\yolo\Miafex_RF\detect_pic\B_model_one\25-08-11-B013_25-08-11-B013-L-Tdi-exp1.jpg"
-    m_image_path = r"D:\A_SJTU\yolo\Miafex_RF\detect_pic\M_model_one\25-08-11-B013_25-08-11-B013-R-DE-DB1.jpg"
-
-    if not Path(b_image_path).exists() or not Path(m_image_path).exists():
-        print("❌ 示例 B/M 图片路径不存在，请先修改 deepseek_ultrasound_agent.py 中的路径。")
-        return
-
-    print("==============================================")
-    print("  步骤1：通过 MCP 工具进行单组 B/M 检测")
-    print("==============================================")
-    detection = await mcp_detect_single_pair(b_image_path, m_image_path)
-    print("原始检测结果（截断展示）：")
-    print(json.dumps(detection, ensure_ascii=False, indent=2)[:600] + "...\n")
-
-    print("==============================================")
-    print("  步骤2：调用 Qwen 模型做中文解释")
-    print("==============================================\n")
-
-    user_intent = (
-        "请根据这名患者的检测结果，说明大致患病风险概率和风险级别，并给出 1~3 条临床建议。"
-    )
-    # 说明：示例里为了方便，你可以直接在这里临时填 key；
-    # 更推荐的做法：用环境变量/`.env`/Streamlit 输入框传入。
-    # api_key = os.getenv("QWEN_API_KEY", "").strip()
-    api_key = "sk-jxrjjptjthxipidmqageemugyjpsqvzxdabusdngydpvsxxf"
-    if not api_key:
-        print("❌ 未找到 QWEN_API_KEY（环境变量或 .env），无法调用 Qwen。")
-        return
-
-    explanation = await qwen_explain_detection(
-        detection_json=detection,
-        user_intent=user_intent,
-        api_key=api_key,
-    )
-
-    print("******** Qwen 模型的中文解读 ********\n")
-    print(explanation)
-    print("\n****************************************\n")
-
-
-# ============================================================
 # 示例 2：让 Qwen 自己决定何时、如何调用 MCP 工具（Agent 行为）
 # ============================================================
 
@@ -673,7 +621,7 @@ async def run_agent_example() -> None:
         print("❌ 示例 B/M 图片路径不存在，请先修改 deepseek_ultrasound_agent.py 中的路径。")
         return
 
-    api_key = "sk-jxyjpsqvzxdabusdngydpvsxxf"
+    api_key = "sk"
 
     print("==============================================")
     print("  运行 Qwen Agent（让 Qwen 自己调用工具）")
@@ -712,5 +660,6 @@ async def main() -> None:
 
 if __name__ == "__main__":
     asyncio.run(main())
+
 
 
