@@ -65,18 +65,7 @@ async def mcp_detect_single_pair(
                 "m_image_path": m_image_path,
             },
         )
-        # FastMCP 一般返回 Content 列表，这里尽量解析成 dict
-        if isinstance(result, list) and result:
-            first = result[0]
-            text = getattr(first, "text", None)
-            if isinstance(text, str):
-                try:
-                    return json.loads(text)
-                except Exception:
-                    return {"raw": text}
-        if isinstance(result, dict):
-            return result
-        return {"raw": str(result)}
+        return _normalize_mcp_result(result)
 
 
 async def mcp_detect_batch_folders(
@@ -95,17 +84,7 @@ async def mcp_detect_batch_folders(
                 "m_folder_path": m_folder_path,
             },
         )
-        if isinstance(result, list) and result:
-            first = result[0]
-            text = getattr(first, "text", None)
-            if isinstance(text, str):
-                try:
-                    return json.loads(text)
-                except Exception:
-                    return {"raw": text}
-        if isinstance(result, dict):
-            return result
-        return {"raw": str(result)}
+        return _normalize_mcp_result(result)
 
 
 # ============================================================
@@ -433,17 +412,80 @@ async def _call_mcp_tool(tool_name: str, arguments: Dict[str, Any]) -> Dict[str,
     """
     async with Client("agent_et_mcp.py") as client:
         result = await client.call_tool(tool_name, arguments)
+        return _normalize_mcp_result(result)
+
+
+def _normalize_mcp_result(result: Any) -> Dict[str, Any]:
+    """
+    将 FastMCP / MCP 工具的返回值标准化为 Python dict。
+
+    支持的输入示例：
+      - list[...]（包含 TextContent 对象，其 .text 字段是 JSON 字符串）
+      - dict（已经是标准 dict）
+      - CallToolResult（具有 structured_content / content / data 属性）
+      - 其它可字符串化的对象
+
+    返回：若能解析为 JSON 或 structured_content，则返回对应 dict；否则返回 {"raw": str(result)}。
+    """
+    # 1) 直接的 list（常见于 fastmcp 返回）
+    try:
         if isinstance(result, list) and result:
             first = result[0]
+            # 某些实现中 element 有 .text
             text = getattr(first, "text", None)
             if isinstance(text, str):
                 try:
                     return json.loads(text)
                 except Exception:
                     return {"raw": text}
+            # 或者 element 本身就是 dict-like
+            if isinstance(first, dict):
+                return first
+
+        # 2) 直接是 dict
         if isinstance(result, dict):
             return result
+
+        # 3) FastMCP 的 CallToolResult 可能带有 structured_content 属性
+        structured = getattr(result, "structured_content", None)
+        if structured:
+            try:
+                # structured_content 通常已经是 dict
+                return dict(structured)
+            except Exception:
+                return {"raw_structured": str(structured)}
+
+        # 4) content 列表也常见：取第一个元素的 .text
+        content = getattr(result, "content", None)
+        if content and len(content) > 0:
+            first = content[0]
+            text = getattr(first, "text", None)
+            if isinstance(text, str):
+                try:
+                    return json.loads(text)
+                except Exception:
+                    return {"raw": text}
+
+        # 5) data 字段（有时为 pydantic 模型或类似对象）
+        data = getattr(result, "data", None)
+        if data is not None:
+            # 如果是 pydantic BaseModel
+            try:
+                if hasattr(data, "dict"):
+                    return data.dict()
+            except Exception:
+                pass
+            try:
+                return dict(data)
+            except Exception:
+                return {"raw_data": str(data)}
+
+    except Exception:
+        # 避免在解析器内抛出异常，统一回退为 raw 字符串
         return {"raw": str(result)}
+
+    # 最后兜底：返回原始字符串
+    return {"raw": str(result)}
 
 
 async def run_qwen_agent(
