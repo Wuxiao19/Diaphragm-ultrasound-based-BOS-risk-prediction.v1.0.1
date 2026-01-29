@@ -179,13 +179,6 @@ with col_m:
             key="m_image_folder",
         )
 
-
-st.markdown("---")
-
-
-
-
-
 # ============================================================
 # 全局：Qwen Agent 模式（不再强制依赖 Run inference）
 # ============================================================
@@ -371,3 +364,4 @@ st.markdown("---")
 st.caption(
     "Developed by AlMSLab"
 )
+
