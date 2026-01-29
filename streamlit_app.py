@@ -8,11 +8,7 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 
-from integrated_detection_gui_ET import DetectionPipeline
-from ultrasound_agent import (
-    qwen_explain_detection_sync,
-    run_qwen_agent,
-)
+from ultrasound_agent import run_qwen_agent
 import asyncio
 
 
@@ -38,30 +34,6 @@ The system will automatically perform: feature extraction → feature reduction
 - filenames must contain `YY-MM-DD-<ID>` pattern, e.g. `24-05-01-C001_xxx`
 """
 )
-
-
-# ============================================================
-# Cache DetectionPipeline instance (avoid re-loading models)
-# ============================================================
-
-@st.cache_resource(show_spinner=True)
-def get_pipeline():
-    """
-    Create and cache a DetectionPipeline instance.
-    We do not modify internal logic of integrated_detection_gui_ET.DetectionPipeline,
-    only reuse it here.
-    """
-
-    # Use simple callback to accumulate logs into session_state for display
-    if "log_messages" not in st.session_state:
-        st.session_state.log_messages = []
-
-    def gui_callback(msg: str):
-        st.session_state.log_messages.append(msg)
-
-    pipeline = DetectionPipeline(gui_callback=gui_callback)
-    pipeline.load_models()
-    return pipeline
 
 
 # ============================================================
@@ -209,9 +181,15 @@ with col_m:
 
 
 st.markdown("---")
+
+
+
+
+
 # ============================================================
 # 全局：Qwen Agent 模式（不再强制依赖 Run inference）
 # ============================================================
+st.markdown("---")
 st.subheader("2. AI 检测与解读（Qwen3-8B Agent）")
 st.caption(
     "说明：本模式下，你只需要在上方上传膈肌 B 模式和 M 模式超声图像，"
@@ -319,6 +297,69 @@ if st.button("🚀 启动 Qwen Agent（自动调用检测工具）", type="prima
             st.markdown("### 💬 Qwen Agent 的完整分析")
             st.markdown(agent_result["final_response"])
 
+            # ====================================================
+            # 从 MCP 工具结果中解析 detect_output_dir，加载并导出 CSV
+            # ====================================================
+            detect_output_dir = None
+            for name, res in agent_result.get("tool_results", {}).items():
+                if isinstance(res, dict) and "detect_output_dir" in res:
+                    detect_output_dir = res["detect_output_dir"]
+                    break
+
+            if isinstance(detect_output_dir, str) and detect_output_dir:
+                result_csv_path = os.path.join(detect_output_dir, "detect_result.csv")
+                if os.path.exists(result_csv_path):
+                    try:
+                        results_df = pd.read_csv(result_csv_path)
+
+                        st.markdown("---")
+                        st.markdown("### 📊 检测结果预览（来自 MCP 流水线）")
+                        key_cols = [
+                            "merged_filename",
+                            "b_filename",
+                            "m_filename",
+                            "risk_probability",
+                            "prediction",
+                            "prediction_label",
+                        ]
+                        show_cols = [c for c in key_cols if c in results_df.columns]
+                        st.dataframe(results_df[show_cols] if show_cols else results_df)
+
+                        st.download_button(
+                            label="下载检测结果 CSV",
+                            data=results_df.to_csv(index=False, encoding="utf-8-sig"),
+                            file_name="detect_result.csv",
+                            mime="text/csv",
+                        )
+
+                        # 缺失模态样本（如果存在）
+                        missing_csv_path = os.path.join(detect_output_dir, "missing_modality_samples.csv")
+                        if os.path.exists(missing_csv_path):
+                            try:
+                                missing_df = pd.read_csv(missing_csv_path)
+                            except Exception:
+                                missing_df = None
+
+                            if missing_df is not None and not missing_df.empty:
+                                st.warning(
+                                    "部分样本缺失 B 或 M 模态，因此未参与最终预测。"
+                                    "你可以下载缺失样本列表进行排查。"
+                                )
+                                with st.expander(
+                                    "Show list of samples with missing modality (downloadable)",
+                                    expanded=False,
+                                ):
+                                    st.dataframe(missing_df)
+                                    st.download_button(
+                                        label="下载缺失模态 CSV",
+                                        data=missing_df.to_csv(index=False, encoding="utf-8-sig"),
+                                        file_name="missing_modality_samples.csv",
+                                        mime="text/csv",
+                                    )
+                    except Exception:
+                        # 如果读取失败，不影响主流程，只是不显示表格和下载按钮
+                        pass
+
         except Exception as e:
             st.error(f"❌ Qwen Agent 运行失败：{e}")
             import traceback
@@ -330,5 +371,3 @@ st.markdown("---")
 st.caption(
     "Developed by AlMSLab"
 )
-
-
