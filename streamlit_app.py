@@ -209,12 +209,9 @@ with col_m:
 
 
 st.markdown("---")
-
-
 # ============================================================
 # 全局：Qwen Agent 模式（不再强制依赖 Run inference）
 # ============================================================
-st.markdown("---")
 st.subheader("2. AI 检测与解读（Qwen3-8B Agent）")
 st.caption(
     "说明：本模式下，你只需要在上方上传膈肌 B 模式和 M 模式超声图像，"
@@ -333,4 +330,5 @@ st.markdown("---")
 st.caption(
     "Developed by AlMSLab"
 )
+
 
