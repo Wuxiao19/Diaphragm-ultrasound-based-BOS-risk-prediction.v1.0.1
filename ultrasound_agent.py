@@ -508,18 +508,42 @@ async def _call_mcp_tool(tool_name: str, arguments: Dict[str, Any]) -> Dict[str,
     由 Agent 示例使用：根据工具名和参数真正调用 MCP 工具。
     这里直接使用 FastMCP Client 的通用调用方式。
     """
-    client = await get_mcp_client("agent_et_mcp.py")
-    result = await client.call_tool(tool_name, arguments)
-    normalized = _normalize_mcp_result(result)
-    # 记录 detect_output_dir，便于后续清理历史检测输出
+    # 首先尝试使用复用的全局 client（提高性能，避免频繁重启子进程）
     try:
-        d = normalized.get("detect_output_dir")
-        if isinstance(d, str) and d:
-            if d not in _last_detect_output_dirs:
-                _last_detect_output_dirs.append(d)
+        client = await get_mcp_client("agent_et_mcp.py")
+        try:
+            result = await client.call_tool(tool_name, arguments)
+        except RuntimeError:
+            # 如果 client 尚未连接或 session 无效，回退到短生命周期的 context 调用
+            client = None
+        else:
+            normalized = _normalize_mcp_result(result)
+            # 记录 detect_output_dir，便于后续清理历史检测输出
+            try:
+                d = normalized.get("detect_output_dir")
+                if isinstance(d, str) and d:
+                    if d not in _last_detect_output_dirs:
+                        _last_detect_output_dirs.append(d)
+            except Exception:
+                pass
+            return normalized
     except Exception:
-        pass
-    return normalized
+        # 任何异常都回退到短生命周期 context 调用
+        client = None
+
+    # 如果复用 client 不可用，则使用短生命周期的 async with Client(...) 调用
+    async with Client("agent_et_mcp.py") as transient_client:
+        result = await transient_client.call_tool(tool_name, arguments)
+        normalized = _normalize_mcp_result(result)
+    # 记录 detect_output_dir，便于后续清理历史检测输出
+        try:
+            d = normalized.get("detect_output_dir")
+            if isinstance(d, str) and d:
+                if d not in _last_detect_output_dirs:
+                    _last_detect_output_dirs.append(d)
+        except Exception:
+            pass
+        return normalized
 
 
 async def _cleanup_previous_detect_outputs() -> None:
