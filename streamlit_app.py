@@ -129,17 +129,7 @@ if "detect_output_dir" not in st.session_state:
 
 
 def _on_file_uploader_change(mode: str) -> None:
-    """当用户点击Browse files上传新文件时，清除旧上传文件和检测结果，防止混用。"""
-    # 清除 uploaded_inputs 下的所有旧上传子目录（旧上传的文件）
-    try:
-        upload_root = ensure_upload_dir()
-        for child in upload_root.iterdir():
-            if child.is_dir():
-                shutil.rmtree(child, ignore_errors=True)
-    except Exception:
-        pass
-    
-    # 清除 agent 结果和检测输出路径
+    """当用户上传新文件时，清除旧的检测结果，防止重复检测。"""
     st.session_state.pop("agent_result", None)
     st.session_state["detect_output_dir"] = None
 
@@ -320,8 +310,8 @@ if st.button("🚀 启动 Qwen Agent（自动调用检测工具）", type="prima
         m_folder_for_agent = None
 
         try:
-            # 保险：再次确保删除 uploaded_inputs 下的所有旧上传子目录
-            # （on_change 中应该已删除，但为了安全再做一次）
+            # 在保存新上传文件之前，删除 uploaded_inputs 下的历史上传子目录，
+            # 避免旧文件被误加入到这次的 MCP 检测中。
             try:
                 upload_root = ensure_upload_dir()
                 for child in upload_root.iterdir():
