@@ -24,6 +24,9 @@ import pandas as pd
 from dotenv import load_dotenv
 from fastmcp import Client
 from openai import OpenAI
+import shutil
+import time
+from typing import Optional
 
 
 # ============================================================
@@ -45,6 +48,103 @@ def get_qwen_client(api_key: str, base_url: str = DEFAULT_QWEN_BASE_URL) -> Open
 
 
 # ============================================================
+# MCP client reuse & tool discovery
+# ============================================================
+
+# 全局复用的 MCP Client（避免每次调用都重启子进程）
+_mcp_client: Optional[Client] = None
+_mcp_client_entry: Optional[str] = None
+
+# 记录上一次工具产生的 detect_output_dir（用于清理）
+_last_detect_output_dirs: List[str] = []
+
+
+async def get_mcp_client(mcp_entry: str = "agent_et_mcp.py") -> Client:
+    """
+    获取一个可复用的 FastMCP Client 实例（单例）。
+
+    - 如果已有客户端且 entry 相同则直接返回；
+    - 否则关闭旧客户端并创建新客户端。
+    """
+    global _mcp_client, _mcp_client_entry
+    if _mcp_client is not None and _mcp_client_entry == mcp_entry:
+        return _mcp_client
+
+    # 关闭旧 client（如果有）
+    if _mcp_client is not None:
+        try:
+            await _mcp_client.__aexit__(None, None, None)
+        except Exception:
+            pass
+        _mcp_client = None
+        _mcp_client_entry = None
+
+    # 创建并 enter
+    _mcp_client = Client(mcp_entry)
+    await _mcp_client.__aenter__()
+    _mcp_client_entry = mcp_entry
+    return _mcp_client
+
+
+async def close_mcp_client() -> None:
+    """显式关闭全局 MCP client（可选）。"""
+    global _mcp_client, _mcp_client_entry
+    if _mcp_client is not None:
+        try:
+            await _mcp_client.__aexit__(None, None, None)
+        except Exception:
+            pass
+    _mcp_client = None
+    _mcp_client_entry = None
+
+
+async def mcp_list_tools(mcp_entry: str = "agent_et_mcp.py") -> List[Dict[str, Any]]:
+    """
+    尝试通过正在运行的 MCP client 获取工具定义（优先）；如果不可用，则回退到解析 mcp_entry 文件。
+
+    返回：一个适配 Qwen tools 格式的列表（与 QWEN_TOOLS 兼容）。
+    """
+    # 1) 尝试通过 client.list_tools()（如果 FastMCP 支持）
+    try:
+        client = await get_mcp_client(mcp_entry)
+        if hasattr(client, "list_tools"):
+            tools = await client.list_tools()
+            # 假设返回的是列表，每项包含 name, description, parameters...
+            qwen_tools: List[Dict[str, Any]] = []
+            for t in tools:
+                # 直接使用已有结构（若已兼容）
+                qwen_tools.append(t)
+            if qwen_tools:
+                return qwen_tools
+    except Exception:
+        # 忽略并回退到文件解析
+        pass
+
+    # 2) 回退：解析本地 agent_et_mcp.py 文件，寻找 @mcp.tool 装饰器
+    try:
+        code = Path(mcp_entry).read_text(encoding="utf-8")
+        # 简单正则：抓 name 和 description（如果有）
+        pattern = r"@mcp.tool\s*\(\s*name\s*=\s*[\'\"](?P<name>[\w_\-]+)[\'\"](?:,\s*description\s*=\s*[\'\"](?P<desc>.*?)[\'\"])?"
+        import re as _re
+
+        qwen_tools = []
+        for m in _re.finditer(pattern, code, _re.S):
+            name = m.group("name")
+            desc = m.group("desc") or ""
+            if name == "detect_single_pair":
+                qwen_tools.append(QWEN_TOOLS[0])
+            elif name == "detect_batch_folders":
+                qwen_tools.append(QWEN_TOOLS[1])
+        if qwen_tools:
+            return qwen_tools
+    except Exception:
+        pass
+
+    # 3) 最后兜底：返回内置 QWEN_TOOLS
+    return QWEN_TOOLS
+
+
+# ============================================================
 # MCP 工具调用封装（沿用你已有的 DetectionPipeline）
 # ============================================================
 
@@ -57,15 +157,15 @@ async def mcp_detect_single_pair(
     """
     通过 FastMCP Client 调用 MCP 工具 detect_single_pair，获取单组 B/M 检测结果。
     """
-    async with Client(mcp_entry) as client:
-        result = await client.call_tool(
-            "detect_single_pair",
-            {
-                "b_image_path": b_image_path,
-                "m_image_path": m_image_path,
-            },
-        )
-        return _normalize_mcp_result(result)
+    client = await get_mcp_client(mcp_entry)
+    result = await client.call_tool(
+        "detect_single_pair",
+        {
+            "b_image_path": b_image_path,
+            "m_image_path": m_image_path,
+        },
+    )
+    return _normalize_mcp_result(result)
 
 
 async def mcp_detect_batch_folders(
@@ -76,15 +176,15 @@ async def mcp_detect_batch_folders(
     """
     通过 FastMCP Client 调用 MCP 工具 detect_batch_folders，获取批量 B/M 检测结果。
     """
-    async with Client(mcp_entry) as client:
-        result = await client.call_tool(
-            "detect_batch_folders",
-            {
-                "b_folder_path": b_folder_path,
-                "m_folder_path": m_folder_path,
-            },
-        )
-        return _normalize_mcp_result(result)
+    client = await get_mcp_client(mcp_entry)
+    result = await client.call_tool(
+        "detect_batch_folders",
+        {
+            "b_folder_path": b_folder_path,
+            "m_folder_path": m_folder_path,
+        },
+    )
+    return _normalize_mcp_result(result)
 
 
 # ============================================================
@@ -192,9 +292,8 @@ async def qwen_explain_detection(
         temperature=temperature,
     )
 
-
 # ============================================================
-# 示例 2：让 Qwen 自己决定何时、如何调用 MCP 工具（Agent 行为）
+# 示例：让 Qwen 自己决定何时、如何调用 MCP 工具（Agent 行为）
 # ============================================================
 
 
@@ -358,9 +457,59 @@ async def _call_mcp_tool(tool_name: str, arguments: Dict[str, Any]) -> Dict[str,
     由 Agent 示例使用：根据工具名和参数真正调用 MCP 工具。
     这里直接使用 FastMCP Client 的通用调用方式。
     """
-    async with Client("agent_et_mcp.py") as client:
-        result = await client.call_tool(tool_name, arguments)
-        return _normalize_mcp_result(result)
+    client = await get_mcp_client("agent_et_mcp.py")
+    result = await client.call_tool(tool_name, arguments)
+    normalized = _normalize_mcp_result(result)
+    # 记录 detect_output_dir，便于后续清理历史检测输出
+    try:
+        d = normalized.get("detect_output_dir")
+        if isinstance(d, str) and d:
+            if d not in _last_detect_output_dirs:
+                _last_detect_output_dirs.append(d)
+    except Exception:
+        pass
+    return normalized
+
+
+async def _cleanup_previous_detect_outputs() -> None:
+    """删除上一次 run 中记录的 detect_output_dir（如果存在），并清空记录。"""
+    global _last_detect_output_dirs
+    if not _last_detect_output_dirs:
+        return
+    for d in list(_last_detect_output_dirs):
+        try:
+            if d and os.path.exists(d) and os.path.isdir(d):
+                shutil.rmtree(d)
+        except Exception:
+            # 忽略删除失败，继续尝试其它目录
+            pass
+    _last_detect_output_dirs = []
+
+
+def export_agent_conversation(messages: List[Dict[str, Any]],
+                              tool_calls: List[Dict[str, Any]],
+                              tool_results: Dict[str, Any],
+                              final_response: str,
+                              out_dir: str = "detect") -> str:
+    """
+    导出 agent 的完整对话记录（messages + tool_calls + tool_results + final_response）到 JSON 文件，返回文件路径。
+    """
+    try:
+        os.makedirs(out_dir, exist_ok=True)
+        ts = int(time.time())
+        path = os.path.join(out_dir, f"agent_conversation_{ts}.json")
+        payload = {
+            "messages": messages,
+            "tool_calls": tool_calls,
+            "tool_results": tool_results,
+            "final_response": final_response,
+            "exported_at": ts,
+        }
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(payload, f, ensure_ascii=False, indent=2)
+        return path
+    except Exception:
+        return ""
 
 
 def _normalize_mcp_result(result: Any) -> Dict[str, Any]:
@@ -504,6 +653,10 @@ async def run_qwen_agent(
         else:
             raise ValueError("必须提供 (b_image_path, m_image_path) 或 (b_folder_path, m_folder_path)")
 
+    # 先清理上一次检测遗留的输出（如果有）
+    await _cleanup_previous_detect_outputs()
+
+    # 获取 Qwen client
     client = get_qwen_client(api_key=api_key, base_url=base_url)
 
     messages = [
@@ -511,11 +664,17 @@ async def run_qwen_agent(
         {"role": "user", "content": user_query},
     ]
 
-    # 步骤1：让 Qwen 决定调用哪个工具
+    # 尝试动态从 MCP 获取工具定义，优先使用运行中的 MCP
+    try:
+        tools = await mcp_list_tools("agent_et_mcp.py")
+    except Exception:
+        tools = QWEN_TOOLS
+
+    # 步骤1：让 Qwen 决定调用哪个工具（将 tools 动态传入）
     first = client.chat.completions.create(
         model=model,
         messages=messages,
-        tools=QWEN_TOOLS,
+        tools=tools,
         tool_choice="auto",
         temperature=0.3,
     )
@@ -560,7 +719,7 @@ async def run_qwen_agent(
         messages.append(
             {
                 "role": "tool",
-                "tool_call_id": tool_call.id,
+                "tool_call_id": getattr(tool_call, "id", None),
                 "name": tool_name,
                 "content": json.dumps(tool_result, ensure_ascii=False),
             }
@@ -574,7 +733,7 @@ async def run_qwen_agent(
                 detection_summary = None
 
     # 如果成功构建了结构化汇总，把它作为额外提示信息给到 Qwen，
-    # 明确要求在最终回答中参考其中的复检信息和缺失模态信息。
+    # 明确请求在最终回答中参考其中的复检信息和缺失模态信息。
     if detection_summary is not None:
         summary_str = json.dumps(detection_summary, ensure_ascii=False, indent=2)
         messages.append(
@@ -603,10 +762,14 @@ async def run_qwen_agent(
 
     final_msg = second.choices[0].message
 
+    # 导出对话记录（可供下载）
+    convo_path = export_agent_conversation(messages, tool_calls_info, tool_results_dict, final_msg.content or "")
+
     return {
         "tool_calls": tool_calls_info,
         "tool_results": tool_results_dict,
         "final_response": final_msg.content or "",
+        "conversation_export_path": convo_path,
     }
 
 
@@ -621,7 +784,7 @@ async def run_agent_example() -> None:
         print("❌ 示例 B/M 图片路径不存在，请先修改 deepseek_ultrasound_agent.py 中的路径。")
         return
 
-    api_key = "sk"
+    api_key = "sk-jxf"
 
     print("==============================================")
     print("  运行 Qwen Agent（让 Qwen 自己调用工具）")
@@ -651,15 +814,11 @@ async def main() -> None:
     命令行入口：
     - 你可以在这里选择跑“纯解释模式”还是“Agent 模式”。
     """
-    # 1) 只看 JSON + 解释（你之前已经测试通过的）
-    # await run_single_example()
-
-    # 2) 让 Qwen 亲自调用工具（真正 Agent 行为）
+    # 让 Qwen 亲自调用工具（真正 Agent 行为）
     await run_agent_example()
 
 
 if __name__ == "__main__":
     asyncio.run(main())
-
 
 
