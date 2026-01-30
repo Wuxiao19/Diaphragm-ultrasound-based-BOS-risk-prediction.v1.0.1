@@ -1,6 +1,6 @@
 import streamlit as st
 from random import randint
-from session_state import get_session_state
+from .session_state import get_session_state
 
 state = get_session_state()
 if not state.widget_key:
@@ -10,4 +10,5 @@ uploaded_file = st.file_uploader(
 if st.button('clear uploaded_file'):
     state.widget_key = str(randint(1000, 100000000))
 state.sync()
+
 
