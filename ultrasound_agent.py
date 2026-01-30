@@ -836,16 +836,50 @@ async def run_qwen_agent(
     )
 
     final_msg = second.choices[0].message
+    # 如果模型没有生成文本回答，收集调试信息以便排查
+    def _sanitize_for_json(x):
+        # 递归将复杂对象转换为 JSON-可序列化的形式（不可识别的对象将被 str()）
+        if x is None:
+            return None
+        if isinstance(x, (str, int, float, bool)):
+            return x
+        if isinstance(x, dict):
+            return {str(k): _sanitize_for_json(v) for k, v in x.items()}
+        if isinstance(x, list):
+            return [_sanitize_for_json(v) for v in x]
+        try:
+            # 尝试直接序列化常见类型
+            return json.loads(json.dumps(x))
+        except Exception:
+            try:
+                return str(x)
+            except Exception:
+                return "<unserializable>"
+
+    final_text = final_msg.content or ""
 
     # 导出对话记录（可供下载）
-    convo_path = export_agent_conversation(messages, tool_calls_info, tool_results_dict, final_msg.content or "")
+    convo_path = export_agent_conversation(messages, tool_calls_info, tool_results_dict, final_text)
 
-    return {
+    result_obj = {
         "tool_calls": tool_calls_info,
         "tool_results": tool_results_dict,
-        "final_response": final_msg.content or "",
+        "final_response": final_text,
         "conversation_export_path": convo_path,
     }
+
+    if not final_text.strip():
+        # 补充可读的 debug 信息
+        debug = {
+            "messages": _sanitize_for_json(messages),
+            "assistant_msg_tool_calls": _sanitize_for_json(getattr(choice, 'message', None) and getattr(choice.message, 'tool_calls', None)),
+            "first_choice": _sanitize_for_json(choice),
+            "second_choices": _sanitize_for_json(getattr(second, 'choices', None)),
+            "tool_results": _sanitize_for_json(tool_results_dict),
+        }
+        result_obj["debug"] = debug
+
+    return result_obj
 
 
 async def run_agent_example() -> None:
