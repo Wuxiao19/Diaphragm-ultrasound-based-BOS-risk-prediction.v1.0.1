@@ -218,6 +218,16 @@ if st.button("🚀 启动 Qwen Agent（自动调用检测工具）", type="prima
         m_folder_for_agent = None
 
         try:
+            # 在保存新上传文件之前，删除 uploaded_inputs 下的历史上传子目录，
+            # 避免旧文件被误加入到这次的 MCP 检测中。
+            try:
+                upload_root = ensure_upload_dir()
+                for child in upload_root.iterdir():
+                    if child.is_dir():
+                        shutil.rmtree(child, ignore_errors=True)
+            except Exception:
+                pass
+
             if input_mode == "single":
                 if not ("b_file" in locals() and b_file) or not ("m_file" in locals() and m_file):
                     st.error("请先在上方上传一张 B 模式和一张 M 模式图片。")
@@ -248,15 +258,6 @@ if st.button("🚀 启动 Qwen Agent（自动调用检测工具）", type="prima
 
             # 在开始新一次 Agent 运行前，清除上一次的显示（仅在真正开始运行时）
             st.session_state.pop("agent_result", None)
-
-            # 删除 uploaded_inputs 下的历史上传文件，避免旧文件被下一次检测误用
-            try:
-                upload_root = ensure_upload_dir()
-                for child in upload_root.iterdir():
-                    if child.is_dir():
-                        shutil.rmtree(child, ignore_errors=True)
-            except Exception:
-                pass
 
             with st.spinner("🤖 Qwen Agent 正在工作：调用检测工具并生成分析..."):
                 if b_path_for_agent and m_path_for_agent:
