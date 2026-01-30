@@ -109,13 +109,64 @@ async def mcp_list_tools(mcp_entry: str = "agent_et_mcp.py") -> List[Dict[str, A
         client = await get_mcp_client(mcp_entry)
         if hasattr(client, "list_tools"):
             tools = await client.list_tools()
-            # 假设返回的是列表，每项包含 name, description, parameters...
+            # 将 MCP 的 tool 描述映射为 OpenAI/Qwen 的函数工具格式
             qwen_tools: List[Dict[str, Any]] = []
-            for t in tools:
-                # 直接使用已有结构（若已兼容）
-                qwen_tools.append(t)
-            if qwen_tools:
-                return qwen_tools
+            try:
+                for t in tools:
+                    # 支持 dict 或对象两种形式
+                    if isinstance(t, dict):
+                        name = t.get("name") or t.get("tool_name")
+                        desc = t.get("description") or t.get("desc") or ""
+                        params = t.get("parameters") or t.get("schema") or t.get("args")
+                    else:
+                        name = getattr(t, "name", None) or getattr(t, "tool_name", None)
+                        desc = getattr(t, "description", None) or getattr(t, "desc", None) or ""
+                        params = getattr(t, "parameters", None) or getattr(t, "schema", None) or getattr(t, "args", None)
+
+                    if not name:
+                        continue
+
+                    func: Dict[str, Any] = {"name": name, "description": desc or ""}
+
+                    # 构建 parameters 的 JSON Schema（最小兼容）
+                    parameters_schema: Dict[str, Any]
+                    if isinstance(params, dict):
+                        # 如果已经是 JSON Schema，直接使用
+                        parameters_schema = params
+                    elif isinstance(params, list):
+                        props: Dict[str, Any] = {}
+                        required: List[str] = []
+                        for p in params:
+                            if isinstance(p, dict):
+                                pname = p.get("name")
+                                ptype = p.get("type", "string")
+                                pdesc = p.get("description", "")
+                                preq = bool(p.get("required", False))
+                            else:
+                                pname = getattr(p, "name", None)
+                                ptype = getattr(p, "type", "string")
+                                pdesc = getattr(p, "description", "")
+                                preq = bool(getattr(p, "required", False))
+                            if not pname:
+                                continue
+                            props[pname] = {"type": ptype, "description": pdesc}
+                            if preq:
+                                required.append(pname)
+                        parameters_schema = {"type": "object", "properties": props}
+                        if required:
+                            parameters_schema["required"] = required
+                    else:
+                        # 无法解析参数定义时，保守地提供空 schema
+                        parameters_schema = {"type": "object", "properties": {}}
+
+                    func["parameters"] = parameters_schema
+                    qwen_tools.append({"type": "function", "function": func})
+
+                if qwen_tools:
+                    return qwen_tools
+            except Exception:
+                # 若映射过程中出现异常，回退到文件解析
+                pass
     except Exception:
         # 忽略并回退到文件解析
         pass
