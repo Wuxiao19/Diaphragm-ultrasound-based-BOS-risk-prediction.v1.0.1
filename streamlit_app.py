@@ -121,6 +121,18 @@ def to_relative_path(abs_path: str) -> str:
 # Keep at most this number of recent detect/runX directories (older ones are removed).
 KEEP_LAST_RUNS = 20
 
+# 初始化 session_state
+if "last_upload_key" not in st.session_state:
+    st.session_state["last_upload_key"] = None
+if "detect_output_dir" not in st.session_state:
+    st.session_state["detect_output_dir"] = None
+
+
+def _on_file_uploader_change(mode: str) -> None:
+    """当用户上传新文件时，清除旧的检测结果，防止重复检测。"""
+    st.session_state.pop("agent_result", None)
+    st.session_state["detect_output_dir"] = None
+
 
 def _render_agent_result(ar: dict) -> None:
     """Render agent result stored in session_state or returned from run_qwen_agent.
@@ -231,6 +243,7 @@ with col_b:
             "Upload B-mode image (single)",
             type=["jpg", "jpeg", "png", "bmp"],
             key="b_image_single",
+            on_change=lambda: _on_file_uploader_change("single"),
         )
     else:
         b_files = st.file_uploader(
@@ -238,6 +251,7 @@ with col_b:
             type=["jpg", "jpeg", "png", "bmp"],
             accept_multiple_files=True,
             key="b_image_folder",
+            on_change=lambda: _on_file_uploader_change("folder"),
         )
 
 with col_m:
@@ -246,6 +260,7 @@ with col_m:
             "Upload M-mode image (single)",
             type=["jpg", "jpeg", "png", "bmp"],
             key="m_image_single",
+            on_change=lambda: _on_file_uploader_change("single"),
         )
     else:
         m_files = st.file_uploader(
@@ -253,6 +268,7 @@ with col_m:
             type=["jpg", "jpeg", "png", "bmp"],
             accept_multiple_files=True,
             key="m_image_folder",
+            on_change=lambda: _on_file_uploader_change("folder"),
         )
 
 # ============================================================
@@ -409,60 +425,10 @@ if st.button("🚀 启动 Qwen Agent（自动调用检测工具）", type="prima
                 if isinstance(res, dict) and "detect_output_dir" in res:
                     detect_output_dir = res["detect_output_dir"]
                     break
-
-            if isinstance(detect_output_dir, str) and detect_output_dir:
-                result_csv_path = os.path.join(detect_output_dir, "detect_result.csv")
-                if os.path.exists(result_csv_path):
-                    try:
-                        results_df = pd.read_csv(result_csv_path)
-
-                        st.markdown("---")
-                        st.markdown("### 📊 检测结果预览（来自 MCP 流水线）")
-                        key_cols = [
-                            "merged_filename",
-                            "b_filename",
-                            "m_filename",
-                            "risk_probability",
-                            "prediction",
-                            "prediction_label",
-                        ]
-                        show_cols = [c for c in key_cols if c in results_df.columns]
-                        st.dataframe(results_df[show_cols] if show_cols else results_df)
-
-                        st.download_button(
-                            label="下载检测结果 CSV",
-                            data=results_df.to_csv(index=False, encoding="utf-8-sig"),
-                            file_name="detect_result.csv",
-                            mime="text/csv",
-                        )
-
-                        # 缺失模态样本（如果存在）
-                        missing_csv_path = os.path.join(detect_output_dir, "missing_modality_samples.csv")
-                        if os.path.exists(missing_csv_path):
-                            try:
-                                missing_df = pd.read_csv(missing_csv_path)
-                            except Exception:
-                                missing_df = None
-
-                            if missing_df is not None and not missing_df.empty:
-                                st.warning(
-                                    "部分样本缺失 B 或 M 模态，因此未参与最终预测。"
-                                    "你可以下载缺失样本列表进行排查。"
-                                )
-                                with st.expander(
-                                    "Show list of samples with missing modality (downloadable)",
-                                    expanded=False,
-                                ):
-                                    st.dataframe(missing_df)
-                                    st.download_button(
-                                        label="下载缺失模态 CSV",
-                                        data=missing_df.to_csv(index=False, encoding="utf-8-sig"),
-                                        file_name="missing_modality_samples.csv",
-                                        mime="text/csv",
-                                    )
-                    except Exception:
-                        # 如果读取失败，不影响主流程，只是不显示表格和下载按钮
-                        pass
+            
+            # 保存到 session_state，这样下载按钮可以在任何 rerun 中访问它
+            if detect_output_dir:
+                st.session_state["detect_output_dir"] = detect_output_dir
 
         except Exception as e:
             st.error(f"❌ Qwen Agent 运行失败：{e}")
@@ -477,6 +443,65 @@ if st.session_state.get("agent_result"):
     except Exception:
         # 渲染失败不应阻塞主流程，保证页面其它部分可用
         pass
+
+
+# ====================================================
+# 全局：显示 CSV 下载和预览（如果有检测结果）
+# ====================================================
+detect_output_dir = st.session_state.get("detect_output_dir")
+if isinstance(detect_output_dir, str) and detect_output_dir:
+    result_csv_path = os.path.join(detect_output_dir, "detect_result.csv")
+    if os.path.exists(result_csv_path):
+        try:
+            results_df = pd.read_csv(result_csv_path)
+
+            st.markdown("---")
+            st.markdown("### 📊 检测结果预览（来自 MCP 流水线）")
+            key_cols = [
+                "merged_filename",
+                "b_filename",
+                "m_filename",
+                "risk_probability",
+                "prediction",
+                "prediction_label",
+            ]
+            show_cols = [c for c in key_cols if c in results_df.columns]
+            st.dataframe(results_df[show_cols] if show_cols else results_df)
+
+            st.download_button(
+                label="下载检测结果 CSV",
+                data=results_df.to_csv(index=False, encoding="utf-8-sig"),
+                file_name="detect_result.csv",
+                mime="text/csv",
+            )
+
+            # 缺失模态样本（如果存在）
+            missing_csv_path = os.path.join(detect_output_dir, "missing_modality_samples.csv")
+            if os.path.exists(missing_csv_path):
+                try:
+                    missing_df = pd.read_csv(missing_csv_path)
+                except Exception:
+                    missing_df = None
+
+                if missing_df is not None and not missing_df.empty:
+                    st.warning(
+                        "部分样本缺失 B 或 M 模态，因此未参与最终预测。"
+                        "你可以下载缺失样本列表进行排查。"
+                    )
+                    with st.expander(
+                        "Show list of samples with missing modality (downloadable)",
+                        expanded=False,
+                    ):
+                        st.dataframe(missing_df)
+                        st.download_button(
+                            label="下载缺失模态 CSV",
+                            data=missing_df.to_csv(index=False, encoding="utf-8-sig"),
+                            file_name="missing_modality_samples.csv",
+                            mime="text/csv",
+                        )
+        except Exception:
+            # 如果读取失败，不影响主流程，只是不显示表格和下载按钮
+            pass
 
 st.markdown("---")
 st.caption(
