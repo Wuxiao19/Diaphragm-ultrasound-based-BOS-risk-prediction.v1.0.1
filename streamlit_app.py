@@ -122,24 +122,12 @@ def to_relative_path(abs_path: str) -> str:
 KEEP_LAST_RUNS = 20
 
 # 初始化 session_state
-if "last_upload_key" not in st.session_state:
-    st.session_state["last_upload_key"] = None
 if "detect_output_dir" not in st.session_state:
     st.session_state["detect_output_dir"] = None
 
 
-def _on_file_uploader_change(mode: str) -> None:
-    """当用户点击Browse files上传新文件时，清除旧上传文件和检测结果，防止混用。"""
-    # 清除 uploaded_inputs 下的所有旧上传子目录（旧上传的文件）
-    try:
-        upload_root = ensure_upload_dir()
-        for child in upload_root.iterdir():
-            if child.is_dir():
-                shutil.rmtree(child, ignore_errors=True)
-    except Exception:
-        pass
-    
-    # 清除 agent 结果和检测输出路径
+def _clear_session_results():
+    """清除上一次运行的结果，避免 UI 显示混乱。"""
     st.session_state.pop("agent_result", None)
     st.session_state["detect_output_dir"] = None
 
@@ -253,7 +241,6 @@ with col_b:
             "Upload B-mode image (single)",
             type=["jpg", "jpeg", "png", "bmp"],
             key="b_image_single",
-            on_change=lambda: _on_file_uploader_change("single"),
         )
     else:
         b_files = st.file_uploader(
@@ -261,7 +248,6 @@ with col_b:
             type=["jpg", "jpeg", "png", "bmp"],
             accept_multiple_files=True,
             key="b_image_folder",
-            on_change=lambda: _on_file_uploader_change("folder"),
         )
 
 with col_m:
@@ -270,7 +256,6 @@ with col_m:
             "Upload M-mode image (single)",
             type=["jpg", "jpeg", "png", "bmp"],
             key="m_image_single",
-            on_change=lambda: _on_file_uploader_change("single"),
         )
     else:
         m_files = st.file_uploader(
@@ -278,7 +263,6 @@ with col_m:
             type=["jpg", "jpeg", "png", "bmp"],
             accept_multiple_files=True,
             key="m_image_folder",
-            on_change=lambda: _on_file_uploader_change("folder"),
         )
 
 # ============================================================
@@ -313,6 +297,9 @@ if st.button("🚀 启动 Qwen Agent（自动调用检测工具）", type="prima
     if not qwen_api_key.strip():
         st.error("请先填写 Qwen API Key（或在系统环境变量里设置 QWEN_API_KEY）。")
     else:
+        # 清除上一次运行的结果
+        _clear_session_results()
+        
         # 根据当前输入模式，准备传给 Agent 的本地路径
         b_path_for_agent = None
         m_path_for_agent = None
