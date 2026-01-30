@@ -472,6 +472,13 @@ if st.button("🚀 启动 Qwen Agent（自动调用检测工具）", type="prima
             with st.expander("查看详细错误信息", expanded=False):
                 st.code(traceback.format_exc())
 
+# 如果 session 中存在上一次 agent 的结果，始终渲染它（保证在任何 rerun 后都可见）
+if st.session_state.get("agent_result"):
+    try:
+        _render_agent_result(st.session_state.get("agent_result"))
+    except Exception:
+        # 渲染失败不应阻塞主流程，保证页面其它部分可用
+        pass
 
 st.markdown("---")
 st.caption(
