@@ -8,7 +8,7 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 
-from ultrasound_agent import run_qwen_agent
+from ultrasound_agent import run_qwen_agent, _build_detection_summary_from_tool_result
 import asyncio
 
 
@@ -180,7 +180,7 @@ with col_m:
         )
 
 # ============================================================
-# 全局：Qwen Agent 模式（不再强制依赖 Run inference）
+# 全局：Qwen Agent 模式
 # ============================================================
 st.markdown("---")
 st.subheader("2. AI 检测与解读（Qwen3-8B Agent）")
@@ -227,8 +227,9 @@ if st.button("🚀 启动 Qwen Agent（自动调用检测工具）", type="prima
                 b_abs = save_uploaded_file(b_file, _new_run_subdir("B_single_agent"))
                 m_abs = save_uploaded_file(m_file, _new_run_subdir("M_single_agent"))
 
-                b_path_for_agent = to_relative_path(b_abs)
-                m_path_for_agent = to_relative_path(m_abs)
+                # 直接传递绝对路径，避免 MCP 在 uploaded_inputs 根目录下混合旧文件
+                b_path_for_agent = str(Path(b_abs).resolve())
+                m_path_for_agent = str(Path(m_abs).resolve())
 
             else:  # folder 模式
                 if not ("b_files" in locals() and b_files) or len(b_files) == 0:
@@ -241,8 +242,21 @@ if st.button("🚀 启动 Qwen Agent（自动调用检测工具）", type="prima
                 b_abs_dir = save_uploaded_files_as_folder(b_files, _new_run_subdir("B_folder_agent"))
                 m_abs_dir = save_uploaded_files_as_folder(m_files, _new_run_subdir("M_folder_agent"))
 
-                b_folder_for_agent = to_relative_path(b_abs_dir)
-                m_folder_for_agent = to_relative_path(m_abs_dir)
+                # 直接传递绝对目录，避免 MCP 搜索到 uploaded_inputs 其它旧文件
+                b_folder_for_agent = str(Path(b_abs_dir).resolve())
+                m_folder_for_agent = str(Path(m_abs_dir).resolve())
+
+            # 在开始新一次 Agent 运行前，清除上一次的显示（仅在真正开始运行时）
+            st.session_state.pop("agent_result", None)
+
+            # 删除 uploaded_inputs 下的历史上传文件，避免旧文件被下一次检测误用
+            try:
+                upload_root = ensure_upload_dir()
+                for child in upload_root.iterdir():
+                    if child.is_dir():
+                        shutil.rmtree(child, ignore_errors=True)
+            except Exception:
+                pass
 
             with st.spinner("🤖 Qwen Agent 正在工作：调用检测工具并生成分析..."):
                 if b_path_for_agent and m_path_for_agent:
@@ -270,10 +284,14 @@ if st.button("🚀 启动 Qwen Agent（自动调用检测工具）", type="prima
 
             st.success("✅ Qwen Agent 分析完成！")
 
+            # 持久化 agent 结果到 session_state，这样下载等操作不会清除显示
+            st.session_state["agent_result"] = agent_result
+
             # 显示工具调用记录
             with st.expander("🔧 查看：Qwen 调用了哪些工具", expanded=False):
-                if agent_result["tool_calls"]:
-                    for i, tc in enumerate(agent_result["tool_calls"], 1):
+                ar = st.session_state.get("agent_result")
+                if ar and ar.get("tool_calls"):
+                    for i, tc in enumerate(ar["tool_calls"], 1):
                         st.write(f"**工具 {i}**：`{tc['name']}`")
                         st.json(tc["arguments"])
                 else:
@@ -281,20 +299,80 @@ if st.button("🚀 启动 Qwen Agent（自动调用检测工具）", type="prima
 
             # 显示工具返回结果（调试用）
             with st.expander("📊 查看：工具返回的原始 JSON（调试用）", expanded=False):
-                for name, res in agent_result["tool_results"].items():
-                    st.write(f"**{name}** 返回结果：")
-                    st.json(res)
+                ar = st.session_state.get("agent_result")
+                if ar:
+                    for name, res in ar.get("tool_results", {}).items():
+                        st.write(f"**{name}** 返回结果：")
+                        st.json(res)
+                else:
+                    st.write("（无工具返回结果）")
 
             # 显示 Qwen 最终回答
             st.markdown("---")
             st.markdown("### 💬 Qwen Agent 的完整分析")
-            st.markdown(agent_result["final_response"])
+            # 更精致地展示 agent 输出（Manus 风格）
+            ar = st.session_state.get("agent_result")
+            final_text = ar.get("final_response", "") if ar else ""
+
+            # 尝试构建结构化 summary 并以更清晰的卡片/表格展示
+            detection_summary = None
+            if ar and isinstance(ar.get("tool_results"), dict):
+                # 取第一个包含 detect_output_dir 的工具结果作为构建输入
+                for name, res in ar.get("tool_results", {}).items():
+                    if isinstance(res, dict) and res:
+                        try:
+                            detection_summary = _build_detection_summary_from_tool_result(res)
+                            break
+                        except Exception:
+                            detection_summary = None
+            # 顶部：关键摘要
+            if detection_summary:
+                cols = st.columns([1, 1, 1])
+                cols[0].metric("样本数量", detection_summary.get("total_samples", 0))
+                cols[1].metric("平均风险概率", f"{detection_summary.get('average_probability', 0.0):.3f}")
+                cols[2].metric("复检患者数", len(detection_summary.get("recheck_patients", [])))
+
+                st.markdown("**样本详情（表格）**")
+                items_df = pd.DataFrame(detection_summary.get("items", []))
+                if not items_df.empty:
+                    st.dataframe(items_df)
+
+                # 高风险患者
+                high_risk = items_df[items_df["risk_probability"] > 0.7] if not items_df.empty else pd.DataFrame()
+                if not high_risk.empty:
+                    st.warning("检测到高风险患者（risk_probability > 0.7）：")
+                    st.table(high_risk[["merged_key", "patient_id", "date", "risk_probability"]])
+
+                # 复检患者详情
+                if detection_summary.get("recheck_patients"):
+                    with st.expander("复检患者（同一患者在不同日期的随访）", expanded=False):
+                        for rp in detection_summary.get("recheck_patients", []):
+                            st.write(f"患者 ID：{rp.get('patient_id')}")
+                            st.write("检查日期：" + ", ".join(rp.get("exam_dates", [])))
+                            st.dataframe(pd.DataFrame(rp.get("visits", [])))
+
+                # 缺失模态统计
+                if detection_summary.get("missing_modality_summary"):
+                    ms = detection_summary["missing_modality_summary"]
+                    st.info(f"缺失模态样本数：{ms.get('total_missing_samples', 0)}")
+                    if ms.get("missing_by_type"):
+                        st.write("按缺失类型统计：")
+                        st.json(ms.get("missing_by_type"))
+
+            # 原始文本（如果有）放在最后
+            if final_text:
+                st.markdown("---")
+                st.markdown("#### 原始模型文本输出")
+                st.markdown(final_text)
+            else:
+                st.info("（模型未生成文本；请查看调试信息）")
 
             # ====================================================
             # 从 MCP 工具结果中解析 detect_output_dir，加载并导出 CSV
             # ====================================================
             detect_output_dir = None
-            for name, res in agent_result.get("tool_results", {}).items():
+            ar = st.session_state.get("agent_result")
+            for name, res in (ar.get("tool_results", {}) if ar else {}).items():
                 if isinstance(res, dict) and "detect_output_dir" in res:
                     detect_output_dir = res["detect_output_dir"]
                     break
@@ -364,4 +442,3 @@ st.markdown("---")
 st.caption(
     "Developed by AlMSLab"
 )
-
