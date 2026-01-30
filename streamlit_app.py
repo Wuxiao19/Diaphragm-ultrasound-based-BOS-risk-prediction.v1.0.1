@@ -12,6 +12,9 @@ import streamlit as st
 from ultrasound_agent import run_qwen_agent, _build_detection_summary_from_tool_result
 import asyncio
 import json
+
+import sys
+sys.path.append(str(Path(__file__).parent))
 from session_state import get_session_state
 
 
@@ -237,50 +240,30 @@ st.caption(
 
 col_b, col_m = st.columns(2)
 
-# Initialize session state
+# Ensure dynamic key update for file uploaders
 state = get_session_state(b_widget_key=str(randint(1000, 100000000)), m_widget_key=str(randint(1000, 100000000)))
 
 with col_b:
-    if input_mode == "single":
-        b_file = st.file_uploader(
-            "Upload B-mode image (single)",
-            type=["jpg", "jpeg", "png", "bmp"],
-            key=state.b_widget_key,
-        )
-    else:
-        b_files = st.file_uploader(
-            "Upload B-mode images (multiple files allowed, treated as one folder)",
-            type=["jpg", "jpeg", "png", "bmp"],
-            accept_multiple_files=True,
-            key="b_image_folder",
-        )
-
-    # Add a clear button next to file uploaders
+    b_file = st.file_uploader(
+        "Upload B-mode image (single)",
+        type=["jpg", "jpeg", "png", "bmp"],
+        key=state.b_widget_key,
+    )
     if st.button("Clear B-mode uploads"):
         state.b_widget_key = str(randint(1000, 100000000))
         state.sync()
-        st.success("Cleared B-mode uploads.")
+        st.experimental_rerun()  # Force rerun to refresh uploader
 
 with col_m:
-    if input_mode == "single":
-        m_file = st.file_uploader(
-            "Upload M-mode image (single)",
-            type=["jpg", "jpeg", "png", "bmp"],
-            key=state.m_widget_key,
-        )
-    else:
-        m_files = st.file_uploader(
-            "Upload M-mode images (multiple files allowed, treated as one folder)",
-            type=["jpg", "jpeg", "png", "bmp"],
-            accept_multiple_files=True,
-            key="m_image_folder",
-        )
-
-    # Add a clear button next to file uploaders
+    m_file = st.file_uploader(
+        "Upload M-mode image (single)",
+        type=["jpg", "jpeg", "png", "bmp"],
+        key=state.m_widget_key,
+    )
     if st.button("Clear M-mode uploads"):
         state.m_widget_key = str(randint(1000, 100000000))
         state.sync()
-        st.success("Cleared M-mode uploads.")
+        st.experimental_rerun()  # Force rerun to refresh uploader
 
 # Ensure variables are defined before use
 b_file, b_files, m_file, m_files = None, None, None, None
