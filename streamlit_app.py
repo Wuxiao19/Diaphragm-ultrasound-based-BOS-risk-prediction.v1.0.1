@@ -265,6 +265,9 @@ with col_m:
             key="m_image_folder",
         )
 
+# Ensure variables are defined before use
+b_file, b_files, m_file, m_files = None, None, None, None
+
 # Clear previous uploads when new files are uploaded
 if "b_image_single" in st.session_state and b_file is not None:
     del st.session_state["b_image_single"]
