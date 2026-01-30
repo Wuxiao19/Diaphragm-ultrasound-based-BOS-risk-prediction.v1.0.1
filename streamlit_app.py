@@ -254,6 +254,8 @@ with col_b:
     if st.button("Clear B-mode uploads"):
         st.session_state.pop("b_image_single", None)
         st.session_state.pop("b_image_folder", None)
+        st.session_state["b_image_single"] = None
+        st.session_state["b_image_folder"] = None
         st.success("Cleared B-mode uploads.")
 
 with col_m:
@@ -275,6 +277,8 @@ with col_m:
     if st.button("Clear M-mode uploads"):
         st.session_state.pop("m_image_single", None)
         st.session_state.pop("m_image_folder", None)
+        st.session_state["m_image_single"] = None
+        st.session_state["m_image_folder"] = None
         st.success("Cleared M-mode uploads.")
 
 # Ensure variables are defined before use
