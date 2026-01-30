@@ -1,28 +1,25 @@
-"""
-Streamlit does not support session state natively. This module provides a
-SessionState class that can be used to store information across reruns.
-"""
+from streamlit import session_state as _state
 
-import streamlit as st
-
-class _SessionState:
-    def __init__(self, **kwargs):
-        for key, val in kwargs.items():
-            setattr(self, key, val)
-
-    def __call__(self, **kwargs):
-        for key, val in kwargs.items():
-            setattr(self, key, val)
-
-    def sync(self):
-        for key, val in self.__dict__.items():
-            st.session_state[key] = val
+_PERSIST_STATE_KEY = f"{__name__}_PERSIST"
 
 
-def get_session_state(**kwargs):
-    session_state = st.session_state.get("_session_state", None)
-    if session_state is None:
-        session_state = _SessionState(**kwargs)
-        st.session_state["_session_state"] = session_state
+def persist(key: str) -> str:
+    """Mark widget state as persistent."""
+    if _PERSIST_STATE_KEY not in _state:
+        _state[_PERSIST_STATE_KEY] = set()
 
-    return session_state
+    _state[_PERSIST_STATE_KEY].add(key)
+
+    return key
+
+
+def load_widget_state():
+    """Load persistent widget state."""
+    if _PERSIST_STATE_KEY in _state:
+        _state.update(
+            {
+                key: value
+                for key, value in _state.items()
+                if key in _state[_PERSIST_STATE_KEY]
+            }
+        )
