@@ -142,6 +142,16 @@ def _on_file_uploader_change(mode: str) -> None:
     # 清除 agent 结果和检测输出路径
     st.session_state.pop("agent_result", None)
     st.session_state["detect_output_dir"] = None
+    
+    # 重置 file_uploader 的 session_state 键，清除 UI 显示的旧文件
+    # 当用户改变了某个 file_uploader 的值（比如点击了其中一个），
+    # 我们要清除所有上传键的状态，这样页面重新渲染时 file_uploader 会显示为空
+    if mode == "single":
+        st.session_state["b_image_single"] = None
+        st.session_state["m_image_single"] = None
+    else:  # folder
+        st.session_state["b_image_folder"] = None
+        st.session_state["m_image_folder"] = None
 
 
 def _render_agent_result(ar: dict) -> None:
