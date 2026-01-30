@@ -244,22 +244,38 @@ col_b, col_m = st.columns(2)
 state = get_session_state(b_widget_key=str(randint(1000, 100000000)), m_widget_key=str(randint(1000, 100000000)))
 
 with col_b:
-    b_file = st.file_uploader(
-        "Upload B-mode image (single)",
-        type=["jpg", "jpeg", "png", "bmp"],
-        key=state.b_widget_key,
-    )
+    if input_mode == "single":
+        b_file = st.file_uploader(
+            "Upload B-mode image (single)",
+            type=["jpg", "jpeg", "png", "bmp"],
+            key=state.b_widget_key,
+        )
+    else:
+        b_files = st.file_uploader(
+            "Upload B-mode images (multiple files allowed, treated as one folder)",
+            type=["jpg", "jpeg", "png", "bmp"],
+            accept_multiple_files=True,
+            key=state.b_widget_key,
+        )
     if st.button("Clear B-mode uploads"):
         state.b_widget_key = str(randint(1000, 100000000))
         state.sync()
         st.experimental_rerun()  # Force rerun to refresh uploader
 
 with col_m:
-    m_file = st.file_uploader(
-        "Upload M-mode image (single)",
-        type=["jpg", "jpeg", "png", "bmp"],
-        key=state.m_widget_key,
-    )
+    if input_mode == "single":
+        m_file = st.file_uploader(
+            "Upload M-mode image (single)",
+            type=["jpg", "jpeg", "png", "bmp"],
+            key=state.m_widget_key,
+        )
+    else:
+        m_files = st.file_uploader(
+            "Upload M-mode images (multiple files allowed, treated as one folder)",
+            type=["jpg", "jpeg", "png", "bmp"],
+            accept_multiple_files=True,
+            key=state.m_widget_key,
+        )
     if st.button("Clear M-mode uploads"):
         state.m_widget_key = str(randint(1000, 100000000))
         state.sync()
