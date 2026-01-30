@@ -398,9 +398,7 @@ if st.button("🚀 启动 Qwen Agent（自动调用检测工具）", type="prima
 
             # 持久化 agent 结果到 session_state，这样下载等操作不会清除显示
             st.session_state["agent_result"] = sanitized_agent_result
-
-            # 使用统一的渲染器来显示 agent 结果（已存入 session_state），避免重复渲染
-            _render_agent_result(st.session_state.get("agent_result"))
+            # 注：渲染逻辑在页面全局最后的代码块中，避免重复渲染
 
             # ====================================================
             # 从 MCP 工具结果中解析 detect_output_dir，加载并导出 CSV
