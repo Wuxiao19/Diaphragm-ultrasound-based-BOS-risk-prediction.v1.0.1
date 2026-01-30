@@ -265,6 +265,16 @@ with col_m:
             key="m_image_folder",
         )
 
+# Clear previous uploads when new files are uploaded
+if "b_image_single" in st.session_state and b_file is not None:
+    del st.session_state["b_image_single"]
+if "b_image_folder" in st.session_state and b_files:
+    del st.session_state["b_image_folder"]
+if "m_image_single" in st.session_state and m_file is not None:
+    del st.session_state["m_image_single"]
+if "m_image_folder" in st.session_state and m_files:
+    del st.session_state["m_image_folder"]
+
 # ============================================================
 # 全局：Qwen Agent 模式
 # ============================================================
