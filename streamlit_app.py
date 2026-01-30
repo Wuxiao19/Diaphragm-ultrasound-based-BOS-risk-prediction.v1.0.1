@@ -250,6 +250,12 @@ with col_b:
             key="b_image_folder",
         )
 
+    # Add a clear button next to file uploaders
+    if st.button("Clear B-mode uploads"):
+        st.session_state.pop("b_image_single", None)
+        st.session_state.pop("b_image_folder", None)
+        st.success("Cleared B-mode uploads.")
+
 with col_m:
     if input_mode == "single":
         m_file = st.file_uploader(
@@ -264,6 +270,12 @@ with col_m:
             accept_multiple_files=True,
             key="m_image_folder",
         )
+
+    # Add a clear button next to file uploaders
+    if st.button("Clear M-mode uploads"):
+        st.session_state.pop("m_image_single", None)
+        st.session_state.pop("m_image_folder", None)
+        st.success("Cleared M-mode uploads.")
 
 # Ensure variables are defined before use
 b_file, b_files, m_file, m_files = None, None, None, None
