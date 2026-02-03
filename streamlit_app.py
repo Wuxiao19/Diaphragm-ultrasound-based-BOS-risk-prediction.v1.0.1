@@ -305,6 +305,17 @@ with st.expander("点击展开：配置 Qwen（SiliconFlow/OpenAI 兼容接口�
 
 st.info("🤖 **Agent 模式**：直接基于你上传的图像，调用后端检测工具并生成完整分析，无需先点击 Run inference。")
 
+
+def _run_agent_safe(**kwargs):
+    """调用 run_qwen_agent，兼容旧版本不支持 language 参数的情况。"""
+    try:
+        return asyncio.run(run_qwen_agent(**kwargs))
+    except TypeError as e:
+        if "language" in str(e):
+            kwargs.pop("language", None)
+            return asyncio.run(run_qwen_agent(**kwargs))
+        raise
+
 if st.button("🚀 启动 Qwen Agent（自动调用检测工具）", type="primary"):
     if not qwen_api_key.strip():
         st.error("请先填写 Qwen API Key（或在系统环境变量里设置 QWEN_API_KEY）。")
@@ -359,26 +370,22 @@ if st.button("🚀 启动 Qwen Agent（自动调用检测工具）", type="prima
 
             with st.spinner("🤖 Qwen Agent 正在工作：调用检测工具并生成分析..."):
                 if b_path_for_agent and m_path_for_agent:
-                    agent_result = asyncio.run(
-                        run_qwen_agent(
-                            b_image_path=b_path_for_agent,
-                            m_image_path=m_path_for_agent,
-                            api_key=qwen_api_key.strip(),
-                            base_url=qwen_base_url.strip(),
-                            model=qwen_model.strip(),
-                            language=st.session_state.get("agent_language", "中文"),
-                        )
+                    agent_result = _run_agent_safe(
+                        b_image_path=b_path_for_agent,
+                        m_image_path=m_path_for_agent,
+                        api_key=qwen_api_key.strip(),
+                        base_url=qwen_base_url.strip(),
+                        model=qwen_model.strip(),
+                        language=st.session_state.get("agent_language", "中文"),
                     )
                 elif b_folder_for_agent and m_folder_for_agent:
-                    agent_result = asyncio.run(
-                        run_qwen_agent(
-                            b_folder_path=b_folder_for_agent,
-                            m_folder_path=m_folder_for_agent,
-                            api_key=qwen_api_key.strip(),
-                            base_url=qwen_base_url.strip(),
-                            model=qwen_model.strip(),
-                            language=st.session_state.get("agent_language", "中文"),
-                        )
+                    agent_result = _run_agent_safe(
+                        b_folder_path=b_folder_for_agent,
+                        m_folder_path=m_folder_for_agent,
+                        api_key=qwen_api_key.strip(),
+                        base_url=qwen_base_url.strip(),
+                        model=qwen_model.strip(),
+                        language=st.session_state.get("agent_language", "中文"),
                     )
                 else:
                     raise ValueError("无法确定是单组还是批量模式，请检查上传的文件。")
