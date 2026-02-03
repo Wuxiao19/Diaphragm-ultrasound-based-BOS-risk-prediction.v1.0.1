@@ -255,6 +255,7 @@ QWEN_SYSTEM_PROMPT = """
   - m_folder_path：M 模式图片文件夹路径
 
 这两个工具的检测方式都是 B/M 图像组合综合检测，并没有独立检测功能。
+如果没有完整的 B 和 M 图像组合，工具将无法进行检测。因此对于缺失模态的情况，应在报告中单独说明，在解释时要注意这类病人是没有预测结果的。
 
 当你已经拿到 JSON 结构的“自动检测结果”时，其典型内容包括：
 - 对于单个患者：merged_key、risk_probability、prediction、prediction_label 等字段；
