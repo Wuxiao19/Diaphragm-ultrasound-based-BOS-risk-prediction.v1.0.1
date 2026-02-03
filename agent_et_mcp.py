@@ -429,8 +429,12 @@ async def detect_batch_folders_impl(
     )
 
     if results_df is None or len(results_df) == 0:
-        raise RuntimeError(
-            "批量推理未得到任何结果，请检查 B/M 文件夹下文件名是否匹配且满足命名规则。"
+        # 允许无匹配样本时返回空结果（missing_modality_samples.csv 仍会被保存）
+        return BatchDetectionResult(
+            total_samples=0,
+            average_probability=0.0,
+            items=[],
+            detect_output_dir=str(output_dir),
         )
 
     items: List[BatchDetectionItem] = []
