@@ -326,6 +326,73 @@ def _run_agent_safe(**kwargs):
             return asyncio.run(run_qwen_agent(**kwargs))
         raise
 
+
+def _build_user_query(language: str, b_path: str = None, m_path: str = None, b_folder: str = None, m_folder: str = None) -> str:
+    is_english = (language or "中文").strip().lower() in ["en", "english", "英文"]
+    if b_path and m_path:
+        if is_english:
+            return f"""
+I have one patient's diaphragm ultrasound images. Please call the appropriate tool:
+- B-mode image path: {b_path}
+- M-mode image path: {m_path}
+
+Please:
+1. Do NOT provide conclusions before calling the tool; you must call the MCP tool first.
+2. Choose and call the correct detection tool based on the paths above.
+3. After receiving JSON results, explain the patient's risk probability and risk level.
+4. Provide 1-3 clinical recommendations in English.
+5. Remind that this is model output and not a medical diagnosis.
+6. If B/M paths are provided, you must call the tool.
+7. Do not guess risk before tool call.
+8. Tool call is mandatory, not optional.
+"""
+        return f"""
+我这边有一名患者的一组膈肌超声图像，请你根据需要调用合适的检测工具：
+- B 模式图片路径：{b_path}
+- M 模式图片路径：{m_path}
+
+请你：
+1. 没有调用工具之前不要给出任何结论，你必须要真正的调用MCP工具才能继续回答；
+2. 先根据这些路径，选择并调用正确的自动检测工具；
+3. 拿到检测 JSON 结果后，说明该患者的患病风险概率和风险级别；
+4. 给出 1~3 条中文的临床建议；
+5. 提醒这是模型预测结果，不能替代医生诊断。
+6. 只要用户提供了 B/M 图像路径，就必须优先调用检测工具；
+7. 在未调用工具前，不得基于假设给出风险判断；
+8. 工具调用是强制步骤，而不是可选步骤；
+9. 可选步骤是根据用户输入的路径选择调用哪个工具。
+10.不能虚假的调用工具，用户能够看到你是否真正调用了工具。
+"""
+    if b_folder and m_folder:
+        if is_english:
+            return f"""
+I have folders with multiple patients' diaphragm ultrasound images. Please call the batch tool:
+- B-mode folder path: {b_folder}
+- M-mode folder path: {m_folder}
+
+Please:
+1. Do NOT provide conclusions before calling the tool; you must call the MCP tool first.
+2. Call the batch tool (detect_batch_folders).
+3. After receiving JSON results, summarize the risk distribution across patients.
+4. Highlight high-risk patients (e.g., risk_probability > 0.7) with their IDs and probabilities.
+5. Provide 1-3 clinical or management recommendations in English.
+6. Remind that this is model output and not a medical diagnosis.
+"""
+        return f"""
+我这边有多个患者的膈肌超声图像文件夹，请你根据需要调用合适的批量检测工具：
+- B 模式图片文件夹路径：{b_folder}
+- M 模式图片文件夹路径：{m_folder}
+
+请你：
+1. 没有调用工具之前不要给出任何结论，你必须要真正的调用MCP工具才能继续回答；
+2. 先根据这些路径，选择并调用正确的批量检测工具（detect_batch_folders）；
+3. 拿到检测 JSON 结果后，统计并说明所有患者的患病风险分布；
+4. 指出高风险患者（例如 risk_probability > 0.7）并列出他们的 ID 和概率；
+5. 给出 1~3 条临床或管理建议；
+6. 提醒这是模型预测结果，不能替代医生诊断。
+"""
+    return ""
+
 if st.button("🚀 启动 Qwen Agent（自动调用检测工具）", type="primary"):
     if not qwen_api_key.strip():
         st.error("请先填写 Qwen API Key（或在系统环境变量里设置 QWEN_API_KEY）。")
@@ -380,6 +447,11 @@ if st.button("🚀 启动 Qwen Agent（自动调用检测工具）", type="prima
 
             with st.spinner("🤖 Qwen Agent 正在工作：调用检测工具并生成分析..."):
                 if b_path_for_agent and m_path_for_agent:
+                    user_query = _build_user_query(
+                        st.session_state.get("agent_language", "中文"),
+                        b_path=b_path_for_agent,
+                        m_path=m_path_for_agent,
+                    )
                     agent_result = _run_agent_safe(
                         b_image_path=b_path_for_agent,
                         m_image_path=m_path_for_agent,
@@ -387,8 +459,14 @@ if st.button("🚀 启动 Qwen Agent（自动调用检测工具）", type="prima
                         base_url=qwen_base_url.strip(),
                         model=qwen_model.strip(),
                         language=st.session_state.get("agent_language", "中文"),
+                        user_query=user_query,
                     )
                 elif b_folder_for_agent and m_folder_for_agent:
+                    user_query = _build_user_query(
+                        st.session_state.get("agent_language", "中文"),
+                        b_folder=b_folder_for_agent,
+                        m_folder=m_folder_for_agent,
+                    )
                     agent_result = _run_agent_safe(
                         b_folder_path=b_folder_for_agent,
                         m_folder_path=m_folder_for_agent,
@@ -396,6 +474,7 @@ if st.button("🚀 启动 Qwen Agent（自动调用检测工具）", type="prima
                         base_url=qwen_base_url.strip(),
                         model=qwen_model.strip(),
                         language=st.session_state.get("agent_language", "中文"),
+                        user_query=user_query,
                     )
                 else:
                     raise ValueError("无法确定是单组还是批量模式，请检查上传的文件。")
