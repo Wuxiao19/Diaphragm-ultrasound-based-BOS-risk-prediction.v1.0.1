@@ -688,7 +688,7 @@ async def run_qwen_agent(
         }
     """
     if not api_key:
-    raise ValueError("api_key is required")
+        raise ValueError("api_key is required")
 
     # Auto-generate user_query (if not provided)
     if not user_query:
