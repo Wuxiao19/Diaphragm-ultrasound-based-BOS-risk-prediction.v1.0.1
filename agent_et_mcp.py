@@ -505,3 +505,7 @@ async def detect_batch_folders(
     )
 
 
+if __name__ == "__main__":
+    mcp.run()
+
+
