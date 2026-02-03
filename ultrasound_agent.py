@@ -38,12 +38,6 @@ DEFAULT_QWEN_MODEL = "Qwen/Qwen3-8B"
 
 
 def get_qwen_client(api_key: str, base_url: str = DEFAULT_QWEN_BASE_URL) -> OpenAI:
-    """
-    Get an OpenAI-compatible client for Qwen3-8B (SiliconFlow/OpenAI-compatible API).
-
-    Notes:
-    - Do not hardcode the API key; use environment variables or Streamlit secrets/inputs.
-    """
     return OpenAI(api_key=api_key, base_url=base_url)
 
 
@@ -169,13 +163,13 @@ async def mcp_list_tools(mcp_entry: str = "agent_et_mcp.py") -> List[Dict[str, A
                 # If mapping fails, fall back to file parsing
                 pass
     except Exception:
-    # Ignore and fall back to file parsing
+        # Ignore and fall back to file parsing
         pass
 
     # 2) Fallback: parse local agent_et_mcp.py to find @mcp.tool decorators
     try:
         code = Path(mcp_entry).read_text(encoding="utf-8")
-    # Simple regex: capture name and description (if any)
+        # Simple regex: capture name and description (if any)
         pattern = r"@mcp.tool\s*\(\s*name\s*=\s*[\'\"](?P<name>[\w_\-]+)[\'\"](?:,\s*description\s*=\s*[\'\"](?P<desc>.*?)[\'\"])?"
         import re as _re
 
@@ -292,14 +286,14 @@ def qwen_explain_detection_sync(
     model: str = DEFAULT_QWEN_MODEL,
     temperature: float = 0.4,
 ) -> str:
-        """
-        Call Qwen3-8B synchronously to explain the detection JSON in English.
+    """
+    Call Qwen3-8B synchronously to explain the detection JSON in English.
 
-        Args:
-            - detection_json: detection result from MCP tools (single or batch)
-            - user_intent: user intent (e.g., "Please explain the patient's risk and give suggestions")
-        """
-        # Format JSON as a string for the model
+    Args:
+        - detection_json: detection result from MCP tools (single or batch)
+        - user_intent: user intent (e.g., "Please explain the patient's risk and give suggestions")
+    """
+    # Format JSON as a string for the model
     json_str = json.dumps(detection_json, ensure_ascii=False, indent=2)
 
     user_prompt = f"""
@@ -533,7 +527,7 @@ async def _call_mcp_tool(tool_name: str, arguments: Dict[str, Any]) -> Dict[str,
                 pass
             return normalized
     except Exception:
-    # On any error, fall back to short-lived context
+        # On any error, fall back to short-lived context
         client = None
 
     # If the reused client is unavailable, use a short-lived async context client
@@ -593,18 +587,18 @@ def export_agent_conversation(messages: List[Dict[str, Any]],
 
 
 def _normalize_mcp_result(result: Any) -> Dict[str, Any]:
-        """
-        Normalize FastMCP/MCP tool results into a Python dict.
+    """
+    Normalize FastMCP/MCP tool results into a Python dict.
 
-        Supported inputs:
-            - list[...] (contains TextContent objects whose .text is JSON)
-            - dict (already a dict)
-            - CallToolResult (has structured_content / content / data)
-            - other objects convertible to string
+    Supported inputs:
+        - list[...] (contains TextContent objects whose .text is JSON)
+        - dict (already a dict)
+        - CallToolResult (has structured_content / content / data)
+        - other objects convertible to string
 
-        Returns: parsed dict when possible; otherwise {"raw": str(result)}.
-        """
-        # 1) Direct list (common in fastmcp returns)
+    Returns: parsed dict when possible; otherwise {"raw": str(result)}.
+    """
+    # 1) Direct list (common in fastmcp returns)
     try:
         if isinstance(result, list) and result:
             first = result[0]
@@ -619,11 +613,11 @@ def _normalize_mcp_result(result: Any) -> Dict[str, Any]:
             if isinstance(first, dict):
                 return first
 
-    # 2) Direct dict
+        # 2) Direct dict
         if isinstance(result, dict):
             return result
 
-    # 3) CallToolResult may include structured_content
+        # 3) CallToolResult may include structured_content
         structured = getattr(result, "structured_content", None)
         if structured:
             try:
@@ -632,7 +626,7 @@ def _normalize_mcp_result(result: Any) -> Dict[str, Any]:
             except Exception:
                 return {"raw_structured": str(structured)}
 
-    # 4) content list is common: use first element's .text
+        # 4) content list is common: use first element's .text
         content = getattr(result, "content", None)
         if content and len(content) > 0:
             first = content[0]
@@ -643,7 +637,7 @@ def _normalize_mcp_result(result: Any) -> Dict[str, Any]:
                 except Exception:
                     return {"raw": text}
 
-    # 5) data field (sometimes a pydantic model or similar)
+        # 5) data field (sometimes a pydantic model or similar)
         data = getattr(result, "data", None)
         if data is not None:
             # If it's a pydantic BaseModel
@@ -658,7 +652,7 @@ def _normalize_mcp_result(result: Any) -> Dict[str, Any]:
                 return {"raw_data": str(data)}
 
     except Exception:
-    # Avoid raising inside the parser; fall back to raw string
+        # Avoid raising inside the parser; fall back to raw string
         return {"raw": str(result)}
 
     # Final fallback: return raw string
@@ -675,24 +669,24 @@ async def run_qwen_agent(
     model: str = DEFAULT_QWEN_MODEL,
     user_query: str = None,
 ) -> Dict[str, Any]:
-        """
-        True agent behavior—let Qwen decide which detection tool to call.
+    """
+    True agent behavior—let Qwen decide which detection tool to call.
 
-        Args:
-            - b_image_path, m_image_path: image paths for a single exam
-            - b_folder_path, m_folder_path: folder paths for batch exams
-            - api_key: Qwen API key
-            - base_url: API base URL (default SiliconFlow)
-            - model: model name (default Qwen3-8B)
-            - user_query: user natural language request (optional; auto-generated)
+    Args:
+        - b_image_path, m_image_path: image paths for a single exam
+        - b_folder_path, m_folder_path: folder paths for batch exams
+        - api_key: Qwen API key
+        - base_url: API base URL (default SiliconFlow)
+        - model: model name (default Qwen3-8B)
+        - user_query: user natural language request (optional; auto-generated)
 
-        Returns:
-            {
-                "tool_calls": [...],  # tool call records
-                "tool_results": {...},  # tool results
-                "final_response": "...",  # Qwen final response
-            }
-        """
+    Returns:
+        {
+            "tool_calls": [...],  # tool call records
+            "tool_results": {...},  # tool results
+            "final_response": "...",  # Qwen final response
+        }
+    """
     if not api_key:
     raise ValueError("api_key is required")
 
@@ -795,7 +789,7 @@ Please:
         tool_result = await _call_mcp_tool(tool_name, args)
         tool_results_dict[tool_name] = tool_result
 
-    # Add tool result as a tool message in the conversation history
+        # Add tool result as a tool message in the conversation history
         messages.append(
             {
                 "role": "tool",
@@ -805,7 +799,7 @@ Please:
             }
         )
 
-    # Try to build a structured summary (only once)
+        # Try to build a structured summary (only once)
         if detection_summary is None and isinstance(tool_result, dict):
             try:
                 detection_summary = _build_detection_summary_from_tool_result(tool_result)
@@ -833,7 +827,7 @@ Please:
             }
         )
 
-        # Step 3: let Qwen produce the final response based on tool results and summary
+    # Step 3: let Qwen produce the final response based on tool results and summary
     second = client.chat.completions.create(
         model=model,
         messages=messages,
@@ -843,7 +837,7 @@ Please:
     final_msg = second.choices[0].message
     # If the model returns empty text, collect debug info for troubleshooting
     def _sanitize_for_json(x):
-    # Recursively convert objects into JSON-serializable forms (fallback to str)
+        # Recursively convert objects into JSON-serializable forms (fallback to str)
         if x is None:
             return None
         if isinstance(x, (str, int, float, bool)):
@@ -874,7 +868,7 @@ Please:
     }
 
     if not final_text.strip():
-    # Add readable debug information
+        # Add readable debug information
         debug = {
             "messages": _sanitize_for_json(messages),
             "assistant_msg_tool_calls": _sanitize_for_json(getattr(choice, 'message', None) and getattr(choice.message, 'tool_calls', None)),
