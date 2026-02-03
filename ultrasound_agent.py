@@ -254,6 +254,8 @@ QWEN_SYSTEM_PROMPT = """
   - b_folder_path：B 模式图片文件夹路径
   - m_folder_path：M 模式图片文件夹路径
 
+这两个工具的检测方式都是 B/M 图像组合综合检测，并没有独立检测功能。
+
 当你已经拿到 JSON 结构的“自动检测结果”时，其典型内容包括：
 - 对于单个患者：merged_key、risk_probability、prediction、prediction_label 等字段；
 - 对于多个患者：上述字段的列表、总样本数、平均风险等信息。
@@ -669,6 +671,7 @@ async def run_qwen_agent(
     base_url: str = DEFAULT_QWEN_BASE_URL,
     model: str = DEFAULT_QWEN_MODEL,
     user_query: str = None,
+    language: str = "中文",
 ) -> Dict[str, Any]:
     """
     真正的 Agent 行为——让 Qwen 自己“决定调用哪个检测工具”。
@@ -680,6 +683,7 @@ async def run_qwen_agent(
       - base_url: API base URL（默认 SiliconFlow）
       - model: 模型名称（默认 Qwen3-8B）
       - user_query: 用户自然语言需求（可选，会自动生成）
+    - language: 输出语言（"中文" 或 "English"）
 
     返回：
       {
@@ -727,6 +731,15 @@ async def run_qwen_agent(
 """
         else:
             raise ValueError("必须提供 (b_image_path, m_image_path) 或 (b_folder_path, m_folder_path)")
+
+    # 语言控制（默认为中文）
+    lang = (language or "中文").strip().lower()
+    if lang in ["en", "english", "英文"]:
+        lang_instruction = "Please respond in English."
+    else:
+        lang_instruction = "请使用中文回答。"
+    if user_query:
+        user_query = user_query.strip() + "\n" + lang_instruction
 
     # 先清理上一次检测遗留的输出（如果有）
     await _cleanup_previous_detect_outputs()
