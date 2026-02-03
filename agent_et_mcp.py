@@ -125,14 +125,14 @@ async def detect_single_pair_impl(
         filename = b_path.name
         possible_paths = []
         
-    # 1. Original path (already checked, missing)
+        # 1. Original path (already checked, missing)
         possible_paths.append(b_path)
         
-    # 2. If relative, try current working directory
+        # 2. If relative, try current working directory
         if not b_path.is_absolute():
             possible_paths.append(current_dir / b_path)
         
-    # 3. If path contains "uploaded_inputs", try under current directory
+        # 3. If path contains "uploaded_inputs", try under current directory
         path_str = str(b_path)
         if "uploaded_inputs" in path_str:
             # Extract the portion after uploaded_inputs
@@ -141,12 +141,12 @@ async def detect_single_pair_impl(
                 rel_part = parts[1].lstrip("/\\")
                 possible_paths.append(current_dir / "uploaded_inputs" / rel_part)
         
-    # 4. Try using parent directory name + filename
+        # 4. Try using parent directory name + filename
         if len(b_path.parts) >= 2:
             parent_dir = b_path.parts[-2]
             possible_paths.append(current_dir / "uploaded_inputs" / parent_dir / filename)
         
-    # 5. Search under uploaded_inputs in current directory (recursive)
+        # 5. Search under uploaded_inputs in current directory (recursive)
         uploaded_dir = current_dir / "uploaded_inputs"
         if uploaded_dir.exists():
             for subdir in uploaded_dir.iterdir():
@@ -155,7 +155,7 @@ async def detect_single_pair_impl(
                     if candidate.exists():
                         possible_paths.append(candidate)
         
-    # Deduplicate and check
+        # Deduplicate and check
         seen = set()
         unique_paths = []
         for p in possible_paths:
@@ -180,19 +180,19 @@ async def detect_single_pair_impl(
             )
     
     if not m_path.exists():
-    # Same logic for M-mode
+        # Same logic for M-mode
         current_dir = Path.cwd()
         filename = m_path.name
         possible_paths = []
         
-    # 1. Original path (already checked, missing)
+        # 1. Original path (already checked, missing)
         possible_paths.append(m_path)
         
-    # 2. If relative, try current working directory
+        # 2. If relative, try current working directory
         if not m_path.is_absolute():
             possible_paths.append(current_dir / m_path)
         
-    # 3. If path contains "uploaded_inputs", try under current directory
+        # 3. If path contains "uploaded_inputs", try under current directory
         path_str = str(m_path)
         if "uploaded_inputs" in path_str:
             # Extract the portion after uploaded_inputs
@@ -201,12 +201,12 @@ async def detect_single_pair_impl(
                 rel_part = parts[1].lstrip("/\\")
                 possible_paths.append(current_dir / "uploaded_inputs" / rel_part)
         
-    # 4. Try using parent directory name + filename
+        # 4. Try using parent directory name + filename
         if len(m_path.parts) >= 2:
             parent_dir = m_path.parts[-2]
             possible_paths.append(current_dir / "uploaded_inputs" / parent_dir / filename)
         
-    # 5. Search under uploaded_inputs in current directory (recursive)
+        # 5. Search under uploaded_inputs in current directory (recursive)
         uploaded_dir = current_dir / "uploaded_inputs"
         if uploaded_dir.exists():
             for subdir in uploaded_dir.iterdir():
@@ -215,7 +215,7 @@ async def detect_single_pair_impl(
                     if candidate.exists():
                         possible_paths.append(candidate)
         
-    # Deduplicate and check
+        # Deduplicate and check
         seen = set()
         unique_paths = []
         for p in possible_paths:
@@ -249,7 +249,7 @@ async def detect_single_pair_impl(
     )
 
     if results_df is None or len(results_df) == 0:
-    raise RuntimeError("The pipeline returned no results. Check if filenames follow the naming rule.")
+        raise RuntimeError("The pipeline returned no results. Check if filenames follow the naming rule.")
 
     row = results_df.iloc[0]
 
@@ -272,16 +272,16 @@ async def detect_single_pair_impl(
 @mcp.tool(
     name="detect_single_pair",
     description=(
-    "Use the ExtraTrees pipeline to detect risk probability for a B-mode and M-mode diaphragm ultrasound pair."
-    "Requirement: filenames must contain `YY-MM-DD-<ID>`, e.g. `24-05-01-C001_xxx.png`."
+        "Use the ExtraTrees pipeline to detect risk probability for a B-mode and M-mode diaphragm ultrasound pair."
+        "Requirement: filenames must contain `YY-MM-DD-<ID>`, e.g. `24-05-01-C001_xxx.png`."
     ),
 )
 async def detect_single_pair(
     b_image_path: Annotated[
-    str, Field(description="Absolute or relative path to a single B-mode ultrasound image")
+        str, Field(description="Absolute or relative path to a single B-mode ultrasound image")
     ],
     m_image_path: Annotated[
-    str, Field(description="Absolute or relative path to a single M-mode ultrasound image")
+        str, Field(description="Absolute or relative path to a single M-mode ultrasound image")
     ],
 ) -> SingleDetectionResult:
     """
@@ -311,14 +311,14 @@ async def detect_batch_folders_impl(
         current_dir = Path.cwd()
         possible_paths = []
         
-    # 1. Original path (already checked, missing)
+        # 1. Original path (already checked, missing)
         possible_paths.append(b_dir)
         
-    # 2. If relative, try current working directory
+        # 2. If relative, try current working directory
         if not b_dir.is_absolute():
             possible_paths.append(current_dir / b_dir)
         
-    # 3. If path contains "uploaded_inputs", try under current directory
+        # 3. If path contains "uploaded_inputs", try under current directory
         path_str = str(b_dir)
         if "uploaded_inputs" in path_str:
             # Extract the portion after uploaded_inputs
@@ -327,19 +327,19 @@ async def detect_batch_folders_impl(
                 rel_part = parts[1].lstrip("/\\")
                 possible_paths.append(current_dir / "uploaded_inputs" / rel_part)
         
-    # 4. Try using directory name
+        # 4. Try using directory name
         if b_dir.name:
             possible_paths.append(current_dir / "uploaded_inputs" / b_dir.name)
             possible_paths.append(current_dir / b_dir.name)
         
-    # 5. Search under uploaded_inputs in current directory (recursive)
+        # 5. Search under uploaded_inputs in current directory (recursive)
         uploaded_dir = current_dir / "uploaded_inputs"
         if uploaded_dir.exists():
             for subdir in uploaded_dir.iterdir():
                 if subdir.is_dir() and subdir.name == b_dir.name:
                     possible_paths.append(subdir)
         
-    # Deduplicate and check
+        # Deduplicate and check
         seen = set()
         unique_paths = []
         for p in possible_paths:
@@ -367,14 +367,14 @@ async def detect_batch_folders_impl(
         current_dir = Path.cwd()
         possible_paths = []
         
-    # 1. Original path (already checked, missing)
+        # 1. Original path 
         possible_paths.append(m_dir)
         
-    # 2. If relative, try current working directory
+        # 2. If relative, try current working directory
         if not m_dir.is_absolute():
             possible_paths.append(current_dir / m_dir)
         
-    # 3. If path contains "uploaded_inputs", try under current directory
+        # 3. If path contains "uploaded_inputs", try under current directory
         path_str = str(m_dir)
         if "uploaded_inputs" in path_str:
             # Extract the portion after uploaded_inputs
@@ -383,19 +383,19 @@ async def detect_batch_folders_impl(
                 rel_part = parts[1].lstrip("/\\")
                 possible_paths.append(current_dir / "uploaded_inputs" / rel_part)
         
-    # 4. Try using directory name
+        # 4. Try using directory name
         if m_dir.name:
             possible_paths.append(current_dir / "uploaded_inputs" / m_dir.name)
             possible_paths.append(current_dir / m_dir.name)
         
-    # 5. Search under uploaded_inputs in current directory (recursive)
+        # 5. Search under uploaded_inputs in current directory (recursive)
         uploaded_dir = current_dir / "uploaded_inputs"
         if uploaded_dir.exists():
             for subdir in uploaded_dir.iterdir():
                 if subdir.is_dir() and subdir.name == m_dir.name:
                     possible_paths.append(subdir)
         
-    # Deduplicate and check
+        # Deduplicate and check
         seen = set()
         unique_paths = []
         for p in possible_paths:
@@ -429,7 +429,7 @@ async def detect_batch_folders_impl(
     )
 
     if results_df is None or len(results_df) == 0:
-    # Return empty result if no matches (missing_modality_samples.csv is still saved)
+        # Return empty result if no matches (missing_modality_samples.csv is still saved)
         return BatchDetectionResult(
             total_samples=0,
             average_probability=0.0,
@@ -472,8 +472,8 @@ async def detect_batch_folders_impl(
 @mcp.tool(
     name="detect_batch_folders",
     description=(
-    "Batch detection: input a B-mode image folder and an M-mode image folder."
-    "The pipeline pairs and merges by `YY-MM-DD-<ID>` and returns risk probabilities for each sample."
+        "Batch detection: input a B-mode image folder and an M-mode image folder."
+        "The pipeline pairs and merges by `YY-MM-DD-<ID>` and returns risk probabilities for each sample."
     ),
 )
 async def detect_batch_folders(
@@ -503,18 +503,5 @@ async def detect_batch_folders(
         b_folder_path=b_folder_path,
         m_folder_path=m_folder_path,
     )
-
-
-# ============================================================
-# Local execution (optional, for debugging the MCP server)
-# ============================================================
-
-
-if __name__ == "__main__":
-    # Start the MCP server from the command line, e.g.:
-    #   fastmcp dev agent_et_mcp.py
-    # Or directly:
-    #   python agent_et_mcp.py
-    mcp.run()
 
 
