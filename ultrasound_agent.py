@@ -281,16 +281,6 @@ QWEN_SYSTEM_PROMPT = """
 6. 明确提醒：这是基于图像的机器学习模型结果，不能替代医生的最终诊断，最终结论需要结合临床情况由医生判断。
 """
 
-QWEN_SYSTEM_PROMPT_EN = """
-You are an experienced critical care and respiratory rehabilitation specialist who understands risk assessment
-based on diaphragm ultrasound B-mode and M-mode images.
-
-You can use the following tools (already implemented by other modules):
-- detect_single_pair: for a single patient with one B-mode and one M-mode image.
-- detect_batch_folders: for batch inference with B/M image folders.
-
-These tools only work on paired B/M inputs and do not support single-modality inference.
-"""
 
 
 def qwen_explain_detection_sync(
@@ -683,7 +673,6 @@ async def run_qwen_agent(
     base_url: str = DEFAULT_QWEN_BASE_URL,
     model: str = DEFAULT_QWEN_MODEL,
     user_query: str = None,
-    language: str = "中文",
 ) -> Dict[str, Any]:
     """
     真正的 Agent 行为——让 Qwen 自己“决定调用哪个检测工具”。
@@ -695,7 +684,6 @@ async def run_qwen_agent(
       - base_url: API base URL（默认 SiliconFlow）
       - model: 模型名称（默认 Qwen3-8B）
       - user_query: 用户自然语言需求（可选，会自动生成）
-    - language: 输出语言（"中文" 或 "English"）
 
     返回：
       {
@@ -707,32 +695,10 @@ async def run_qwen_agent(
     if not api_key:
         raise ValueError("必须提供 api_key")
 
-    # 语言控制（默认为中文）
-    lang = (language or "中文").strip().lower()
-    is_english = lang in ["en", "english", "英文"]
-    lang_instruction = "Please respond in English." if is_english else "请使用中文回答。"
-
     # 自动生成 user_query（如果未提供）
     if not user_query:
         if b_image_path and m_image_path:
-            if is_english:
-                user_query = f"""
-I have one patient's diaphragm ultrasound images. Please call the appropriate tool:
-- B-mode image path: {b_image_path}
-- M-mode image path: {m_image_path}
-
-Please:
-1. Do NOT provide conclusions before calling the tool; you must call the MCP tool first.
-2. Choose and call the correct detection tool based on the paths above.
-3. After receiving JSON results, explain the patient's risk probability and risk level.
-4. Provide 1-3 clinical recommendations in English.
-5. Remind that this is model output and not a medical diagnosis.
-6. If B/M paths are provided, you must call the tool.
-7. Do not guess risk before tool call.
-8. Tool call is mandatory, not optional.
-"""
-            else:
-                user_query = f"""
+            user_query = f"""
 我这边有一名患者的一组膈肌超声图像，请你根据需要调用合适的检测工具：
 - B 模式图片路径：{b_image_path}
 - M 模式图片路径：{m_image_path}
@@ -750,22 +716,7 @@ Please:
 10.不能虚假的调用工具，用户能够看到你是否真正调用了工具。
 """
         elif b_folder_path and m_folder_path:
-            if is_english:
-                user_query = f"""
-I have folders with multiple patients' diaphragm ultrasound images. Please call the batch tool:
-- B-mode folder path: {b_folder_path}
-- M-mode folder path: {m_folder_path}
-
-Please:
-1. Do NOT provide conclusions before calling the tool; you must call the MCP tool first.
-2. Call the batch tool (detect_batch_folders).
-3. After receiving JSON results, summarize the risk distribution across patients.
-4. Highlight high-risk patients (e.g., risk_probability > 0.7) with their IDs and probabilities.
-5. Provide 1-3 clinical or management recommendations in English.
-6. Remind that this is model output and not a medical diagnosis.
-"""
-            else:
-                user_query = f"""
+            user_query = f"""
 我这边有多个患者的膈肌超声图像文件夹，请你根据需要调用合适的批量检测工具：
 - B 模式图片文件夹路径：{b_folder_path}
 - M 模式图片文件夹路径：{m_folder_path}
@@ -781,18 +732,14 @@ Please:
         else:
             raise ValueError("必须提供 (b_image_path, m_image_path) 或 (b_folder_path, m_folder_path)")
 
-    if user_query:
-        user_query = user_query.strip() + "\n" + lang_instruction
-
     # 先清理上一次检测遗留的输出（如果有）
     await _cleanup_previous_detect_outputs()
 
     # 获取 Qwen client
     client = get_qwen_client(api_key=api_key, base_url=base_url)
 
-    system_prompt = QWEN_SYSTEM_PROMPT_EN if is_english else QWEN_SYSTEM_PROMPT
     messages = [
-        {"role": "system", "content": system_prompt},
+        {"role": "system", "content": QWEN_SYSTEM_PROMPT},
         {"role": "user", "content": user_query},
     ]
 
@@ -879,7 +826,7 @@ Please:
                     "在给出最终中文报告时，请务必：\n"
                     "1）正确理解 merged_key 中的检查日期和患者 ID；\n"
                     "2）特别指出有哪些患者存在复检，并比较不同日期之间的风险变化；\n"
-                    "3）如果存在缺失模态（missing modality），在报告中单独说明这一点及其对结论的不确定性影响；\n"
+                    "3）如果存在缺失模态（missing modality），在报告中单独说明这一点；\n"
                     "4）其余要求仍然按系统提示中的说明执行。"
                 ),
             }
@@ -937,54 +884,4 @@ Please:
         result_obj["debug"] = debug
 
     return result_obj
-
-
-async def run_agent_example() -> None:
-    """
-    命令行示例：运行 Qwen Agent。
-    """
-    b_image_path = r"D:\A_SJTU\yolo\Miafex_RF\detect_pic\B_model_one\25-08-11-B013_25-08-11-B013-L-Tdi-exp1.jpg"
-    m_image_path = r"D:\A_SJTU\yolo\Miafex_RF\detect_pic\M_model_one\25-08-11-B013_25-08-11-B013-R-DE-DB1.jpg"
-
-    if not Path(b_image_path).exists() or not Path(m_image_path).exists():
-        print("❌ 示例 B/M 图片路径不存在，请先修改 deepseek_ultrasound_agent.py 中的路径。")
-        return
-
-    api_key = "sk-jxf"
-
-    print("==============================================")
-    print("  运行 Qwen Agent（让 Qwen 自己调用工具）")
-    print("==============================================")
-
-    result = await run_qwen_agent(
-        b_image_path=b_image_path,
-        m_image_path=m_image_path,
-        api_key=api_key,
-    )
-
-    print("\n工具调用记录：")
-    for tc in result["tool_calls"]:
-        print(f"  - {tc['name']} with args={tc['arguments']}")
-
-    print("\n工具返回结果（截断）：")
-    for name, res in result["tool_results"].items():
-        print(f"  {name}: {json.dumps(res, ensure_ascii=False, indent=2)[:300]}...")
-
-    print("\n******** Qwen Agent 最终回答 ********\n")
-    print(result["final_response"])
-    print("\n****************************************\n")
-
-
-async def main() -> None:
-    """
-    命令行入口：
-    - 你可以在这里选择跑“纯解释模式”还是“Agent 模式”。
-    """
-    # 让 Qwen 亲自调用工具（真正 Agent 行为）
-    await run_agent_example()
-
-
-if __name__ == "__main__":
-    asyncio.run(main())
-
 
