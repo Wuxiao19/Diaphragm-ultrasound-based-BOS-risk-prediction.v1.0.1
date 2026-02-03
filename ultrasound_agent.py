@@ -1,14 +1,14 @@
 """
-使用 Qwen3-8B + FastMCP + 你的 MCP 工具（agent_et_mcp.py）的 Agent 示例。
+Agent example using Qwen3-8B + FastMCP + your MCP tools (agent_et_mcp.py).
 
-设计思路：
-1. 还是用你现有的 MCP 工具负责“算概率”（detect_single_pair / detect_batch_folders）；
-2. Qwen 既可以只负责“看 JSON 结果 + 用中文解释和总结”（解释模式），
-   也可以通过 function-calling 的方式主动决定调用哪个 MCP 工具（Agent 模式）。
+Design:
+1. Use the existing MCP tools to compute probabilities (detect_single_pair / detect_batch_folders).
+2. Qwen can either only read the JSON result and explain it (explain mode),
+    or decide which MCP tools to call via function-calling (agent mode).
 
-本文件内提供两部分能力：
-- qwen_explain_detection_sync：只做“看 JSON + 说人话”，给 Streamlit 等直接调用；
-- run_qwen_agent：让 Qwen 自己根据用户输入选择并调用 MCP 工具，然后再总结结果（真正的 Agent 行为）。
+This file provides two capabilities:
+- qwen_explain_detection_sync: only "read JSON + explain", for direct Streamlit calls.
+- run_qwen_agent: let Qwen decide which MCP tool to call and then summarize the result (true agent behavior).
 """
 
 from __future__ import annotations
@@ -30,7 +30,7 @@ from typing import Optional
 
 
 # ============================================================
-# 环境变量 & Qwen 客户端初始化
+# Environment variables & Qwen client initialization
 # ============================================================
 
 DEFAULT_QWEN_BASE_URL = "https://api.siliconflow.cn/v1"
@@ -39,10 +39,10 @@ DEFAULT_QWEN_MODEL = "Qwen/Qwen3-8B"
 
 def get_qwen_client(api_key: str, base_url: str = DEFAULT_QWEN_BASE_URL) -> OpenAI:
     """
-    获取一个 OpenAI-兼容客户端，用于调用 Qwen3-8B（SiliconFlow/OpenAI兼容接口）。
+    Get an OpenAI-compatible client for Qwen3-8B (SiliconFlow/OpenAI-compatible API).
 
-    注意：
-    - 不要把 API key 写死在代码里；建议用环境变量或 Streamlit secrets/输入框传入。
+    Notes:
+    - Do not hardcode the API key; use environment variables or Streamlit secrets/inputs.
     """
     return OpenAI(api_key=api_key, base_url=base_url)
 
@@ -51,26 +51,26 @@ def get_qwen_client(api_key: str, base_url: str = DEFAULT_QWEN_BASE_URL) -> Open
 # MCP client reuse & tool discovery
 # ============================================================
 
-# 全局复用的 MCP Client（避免每次调用都重启子进程）
+# Reuse a global MCP client (avoid restarting subprocesses per call)
 _mcp_client: Optional[Client] = None
 _mcp_client_entry: Optional[str] = None
 
-# 记录上一次工具产生的 detect_output_dir（用于清理）
+# Track detect_output_dir from previous tool calls (for cleanup)
 _last_detect_output_dirs: List[str] = []
 
 
 async def get_mcp_client(mcp_entry: str = "agent_et_mcp.py") -> Client:
     """
-    获取一个可复用的 FastMCP Client 实例（单例）。
+    Get a reusable FastMCP client instance (singleton).
 
-    - 如果已有客户端且 entry 相同则直接返回；
-    - 否则关闭旧客户端并创建新客户端。
+    - If an existing client with the same entry exists, return it.
+    - Otherwise close the old client and create a new one.
     """
     global _mcp_client, _mcp_client_entry
     if _mcp_client is not None and _mcp_client_entry == mcp_entry:
         return _mcp_client
 
-    # 关闭旧 client（如果有）
+    # Close the old client (if any)
     if _mcp_client is not None:
         try:
             await _mcp_client.__aexit__(None, None, None)
@@ -79,7 +79,7 @@ async def get_mcp_client(mcp_entry: str = "agent_et_mcp.py") -> Client:
         _mcp_client = None
         _mcp_client_entry = None
 
-    # 创建并 enter
+    # Create and enter
     _mcp_client = Client(mcp_entry)
     await _mcp_client.__aenter__()
     _mcp_client_entry = mcp_entry
@@ -87,7 +87,7 @@ async def get_mcp_client(mcp_entry: str = "agent_et_mcp.py") -> Client:
 
 
 async def close_mcp_client() -> None:
-    """显式关闭全局 MCP client（可选）。"""
+    """Explicitly close the global MCP client (optional)."""
     global _mcp_client, _mcp_client_entry
     if _mcp_client is not None:
         try:
@@ -100,20 +100,21 @@ async def close_mcp_client() -> None:
 
 async def mcp_list_tools(mcp_entry: str = "agent_et_mcp.py") -> List[Dict[str, Any]]:
     """
-    尝试通过正在运行的 MCP client 获取工具定义（优先）；如果不可用，则回退到解析 mcp_entry 文件。
+    Try to obtain tool definitions from the running MCP client (preferred); if unavailable,
+    fall back to parsing the mcp_entry file.
 
-    返回：一个适配 Qwen tools 格式的列表（与 QWEN_TOOLS 兼容）。
+    Returns: a list compatible with Qwen tool format (compatible with QWEN_TOOLS).
     """
-    # 1) 尝试通过 client.list_tools()（如果 FastMCP 支持）
+    # 1) Try client.list_tools() (if FastMCP supports it)
     try:
         client = await get_mcp_client(mcp_entry)
         if hasattr(client, "list_tools"):
             tools = await client.list_tools()
-            # 将 MCP 的 tool 描述映射为 OpenAI/Qwen 的函数工具格式
+            # Map MCP tool descriptions to OpenAI/Qwen function tool format
             qwen_tools: List[Dict[str, Any]] = []
             try:
                 for t in tools:
-                    # 支持 dict 或对象两种形式
+                    # Support dict or object form
                     if isinstance(t, dict):
                         name = t.get("name") or t.get("tool_name")
                         desc = t.get("description") or t.get("desc") or ""
@@ -128,10 +129,10 @@ async def mcp_list_tools(mcp_entry: str = "agent_et_mcp.py") -> List[Dict[str, A
 
                     func: Dict[str, Any] = {"name": name, "description": desc or ""}
 
-                    # 构建 parameters 的 JSON Schema（最小兼容）
+                    # Build parameters JSON schema (minimal compatibility)
                     parameters_schema: Dict[str, Any]
                     if isinstance(params, dict):
-                        # 如果已经是 JSON Schema，直接使用
+                        # If it's already JSON schema, use it directly
                         parameters_schema = params
                     elif isinstance(params, list):
                         props: Dict[str, Any] = {}
@@ -156,7 +157,7 @@ async def mcp_list_tools(mcp_entry: str = "agent_et_mcp.py") -> List[Dict[str, A
                         if required:
                             parameters_schema["required"] = required
                     else:
-                        # 无法解析参数定义时，保守地提供空 schema
+                        # If parameters cannot be parsed, fall back to empty schema
                         parameters_schema = {"type": "object", "properties": {}}
 
                     func["parameters"] = parameters_schema
@@ -165,16 +166,16 @@ async def mcp_list_tools(mcp_entry: str = "agent_et_mcp.py") -> List[Dict[str, A
                 if qwen_tools:
                     return qwen_tools
             except Exception:
-                # 若映射过程中出现异常，回退到文件解析
+                # If mapping fails, fall back to file parsing
                 pass
     except Exception:
-        # 忽略并回退到文件解析
+    # Ignore and fall back to file parsing
         pass
 
-    # 2) 回退：解析本地 agent_et_mcp.py 文件，寻找 @mcp.tool 装饰器
+    # 2) Fallback: parse local agent_et_mcp.py to find @mcp.tool decorators
     try:
         code = Path(mcp_entry).read_text(encoding="utf-8")
-        # 简单正则：抓 name 和 description（如果有）
+    # Simple regex: capture name and description (if any)
         pattern = r"@mcp.tool\s*\(\s*name\s*=\s*[\'\"](?P<name>[\w_\-]+)[\'\"](?:,\s*description\s*=\s*[\'\"](?P<desc>.*?)[\'\"])?"
         import re as _re
 
@@ -191,12 +192,12 @@ async def mcp_list_tools(mcp_entry: str = "agent_et_mcp.py") -> List[Dict[str, A
     except Exception:
         pass
 
-    # 3) 最后兜底：返回内置 QWEN_TOOLS
+    # 3) Final fallback: return built-in QWEN_TOOLS
     return QWEN_TOOLS
 
 
 # ============================================================
-# MCP 工具调用封装（沿用你已有的 DetectionPipeline）
+# MCP tool wrappers (reusing the existing DetectionPipeline)
 # ============================================================
 
 
@@ -206,7 +207,7 @@ async def mcp_detect_single_pair(
     mcp_entry: str = "agent_et_mcp.py",
 ) -> Dict[str, Any]:
     """
-    通过 FastMCP Client 调用 MCP 工具 detect_single_pair，获取单组 B/M 检测结果。
+    Call MCP tool detect_single_pair via FastMCP client to get a single B/M detection result.
     """
     client = await get_mcp_client(mcp_entry)
     result = await client.call_tool(
@@ -225,7 +226,7 @@ async def mcp_detect_batch_folders(
     mcp_entry: str = "agent_et_mcp.py",
 ) -> Dict[str, Any]:
     """
-    通过 FastMCP Client 调用 MCP 工具 detect_batch_folders，获取批量 B/M 检测结果。
+    Call MCP tool detect_batch_folders via FastMCP client to get batch B/M detection results.
     """
     client = await get_mcp_client(mcp_entry)
     result = await client.call_tool(
@@ -239,46 +240,46 @@ async def mcp_detect_batch_folders(
 
 
 # ============================================================
-# Qwen 负责“看结果 + 说人话”的部分
+# Qwen explanation section
 # ============================================================
 
 
 QWEN_SYSTEM_PROMPT = """
-你是一名资深的重症医学和呼吸康复专家，熟悉基于膈肌 B 模式和 M 模式超声图像的风险评估模型。
+You are a senior critical care and respiratory rehabilitation specialist familiar with risk assessment models based on diaphragm B-mode and M-mode ultrasound images.
 
-你可以使用以下两个工具（已经通过其它模块实现）：
-- detect_single_pair：用于“单个患者的一组 B + M 图像”检测，参数：
-  - b_image_path：B 模式图片路径（字符串）
-  - m_image_path：M 模式图片路径（字符串）
-- detect_batch_folders：用于“多患者 B/M 文件夹批量检测”，参数：
-  - b_folder_path：B 模式图片文件夹路径
-  - m_folder_path：M 模式图片文件夹路径
+You can use the following two tools (implemented in other modules):
+- detect_single_pair: for detecting a single patient's B + M image pair, parameters:
+    - b_image_path: B-mode image path (string)
+    - m_image_path: M-mode image path (string)
+- detect_batch_folders: for batch detection across multiple patients' B/M folders, parameters:
+    - b_folder_path: B-mode image folder path
+    - m_folder_path: M-mode image folder path
 
-这两个工具的检测方式都是 B/M 图像组合综合检测，并没有独立检测功能。因此只要有一个缺失就没有检测结果
-如果没有完整的 B 和 M 图像组合，工具将无法进行检测。因此对于缺失模态的情况，应在报告中单独说明，在解释时要注意这类病人是没有预测结果的。
+Both tools only work on combined B/M image pairs and do not support standalone modality detection. If either modality is missing, there will be no prediction.
+When there is no complete B and M pair, the tools cannot run. For missing modality cases, mention them separately and note that no prediction is available.
 
-当你已经拿到 JSON 结构的“自动检测结果”时，其典型内容包括：
-- 对于单个患者：merged_key、risk_probability、prediction、prediction_label 等字段；
-- 对于多个患者：上述字段的列表、总样本数、平均风险等信息。
+When you receive the JSON detection result, typical contents include:
+- For a single patient: merged_key, risk_probability, prediction, prediction_label, etc.
+- For multiple patients: a list of those fields, total samples, average risk, etc.
 
-其中 merged_key 的格式为：
-- 形如 "YY-MM-DD-C123"、"YY-MM-DD-B123" 或 "YY-MM-DD-P123"；
-- 前面的 "YY-MM-DD" 表示检查日期（20YY 年 MM 月 DD 日）；
-- 后面的 "C123/B123/P123" 表示患者 ID。
+The merged_key format:
+- Looks like "YY-MM-DD-C123", "YY-MM-DD-B123", or "YY-MM-DD-P123".
+- "YY-MM-DD" is the exam date (20YY-MM-DD).
+- "C123/B123/P123" is the patient ID.
 
-当同一个患者 ID（例如 C113）在不同日期（例如 25-11-08 和 25-12-01）均出现时，表示该患者存在“复检”或“多次随访”。
+If the same patient ID appears on different dates (e.g., 25-11-08 and 25-12-01), it indicates repeat exams or follow-ups.
 
-你的任务：
-1. 用清晰、专业但尽量易懂的中文解释这些检测结果的含义；
-2. 根据 risk_probability 对风险进行分级（如很低、较低、中等、较高、很高），并给出合理的阈值说明；
-3. 如果是批量结果：
-   - 指出明显高风险的患者（例如 risk_probability > 0.7），并列出他们的 ID、检查日期和概率；
-   - 特别关注同一患者 ID 在不同日期的多次检查（复检情况），对这些患者做“纵向随访式”的综合分析，比较不同日期的风险变化趋势；
-4. 如果检测结果中存在“缺失模态”的情况（例如只有 B 没有 M，或只有 M 没有 B），应在报告中单独说明：
-   - 说明缺失的是哪一种模态（B 或 M）；
-   - 注意，本项目未提供单独的模态检测，因此在解释时要注意这类病人是没有预测结果的。
-5. 在给出结论时，至少给出 1~3 条临床或管理上的建议（例如是否需要进一步检查、复查、随访、康复训练或临床评估等）；
-6. 明确提醒：这是基于图像的机器学习模型结果，不能替代医生的最终诊断，最终结论需要结合临床情况由医生判断。
+Your tasks:
+1. Explain the results clearly and professionally in English, while keeping them easy to understand.
+2. Categorize risk by risk_probability (e.g., very low, low, medium, high, very high) and provide reasonable threshold descriptions.
+3. For batch results:
+     - Highlight high-risk patients (e.g., risk_probability > 0.7) with ID, date, and probability.
+     - Pay special attention to repeat exams for the same patient ID and analyze risk trends across dates.
+4. If missing modality cases exist (only B or only M), note them explicitly:
+     - Specify which modality is missing (B or M).
+     - This project does not provide single-modality prediction, so no prediction is available for those cases.
+5. Provide at least 1–3 clinical or management suggestions (e.g., further exams, rechecks, follow-ups, rehab training, or clinical evaluation).
+6. Clearly remind that this is a machine learning result based on images and cannot replace a doctor's final diagnosis.
 """
 
 
@@ -291,25 +292,25 @@ def qwen_explain_detection_sync(
     model: str = DEFAULT_QWEN_MODEL,
     temperature: float = 0.4,
 ) -> str:
-    """
-    同步调用 Qwen3-8B，对检测 JSON 做中文解释。
+        """
+        Call Qwen3-8B synchronously to explain the detection JSON in English.
 
-    参数：
-      - detection_json: 从 MCP 工具拿到的检测结果（单个或批量）
-      - user_intent: 用户想知道的内容（例如“请解释这名患者的风险并给建议”）
-    """
-    # 把 JSON 格式化成字符串给模型看
+        Args:
+            - detection_json: detection result from MCP tools (single or batch)
+            - user_intent: user intent (e.g., "Please explain the patient's risk and give suggestions")
+        """
+        # Format JSON as a string for the model
     json_str = json.dumps(detection_json, ensure_ascii=False, indent=2)
 
     user_prompt = f"""
-下面是自动检测模型给出的 JSON 结果：
+Below is the JSON result from the automated detection model:
 
 {json_str}
 
-用户问题/需求如下：
+User question/need:
 {user_intent}
 
-请按照系统提示中的要求，给出一段完整的中文解读。
+Please follow the system instructions and provide a complete explanation in English.
 """
 
     client = get_qwen_client(api_key=api_key, base_url=base_url)
@@ -323,7 +324,7 @@ def qwen_explain_detection_sync(
         temperature=temperature,
     )
 
-    # Qwen-OpenAI 接口风格：choices[0].message.content
+    # Qwen-OpenAI API style: choices[0].message.content
     return resp.choices[0].message.content or ""
 
 
@@ -336,7 +337,7 @@ async def qwen_explain_detection(
     temperature: float = 0.4,
 ) -> str:
     """
-    异步包装：在需要 async 的场景下使用（内部仍是同步 HTTP 请求）。
+    Async wrapper for use in async contexts (internally still synchronous HTTP calls).
     """
     return qwen_explain_detection_sync(
         detection_json=detection_json,
@@ -348,7 +349,7 @@ async def qwen_explain_detection(
     )
 
 # ============================================================
-# 示例：让 Qwen 自己决定何时、如何调用 MCP 工具（Agent 行为）
+# Example: let Qwen decide when/how to call MCP tools (agent behavior)
 # ============================================================
 
 
@@ -357,17 +358,17 @@ QWEN_TOOLS = [
         "type": "function",
         "function": {
             "name": "detect_single_pair",
-            "description": "对单个患者的一组 B 模式图像和 M 模式图像进行自动特征提取和风险预测。",
+            "description": "Automatically extract features and predict risk for a single patient's B-mode and M-mode image pair.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "b_image_path": {
                         "type": "string",
-                        "description": "B 模式超声图像的本地路径（绝对或相对）。",
+                        "description": "Local path to the B-mode ultrasound image (absolute or relative).",
                     },
                     "m_image_path": {
                         "type": "string",
-                        "description": "M 模式超声图像的本地路径（绝对或相对）。",
+                        "description": "Local path to the M-mode ultrasound image (absolute or relative).",
                     },
                 },
                 "required": ["b_image_path", "m_image_path"],
@@ -378,17 +379,17 @@ QWEN_TOOLS = [
         "type": "function",
         "function": {
             "name": "detect_batch_folders",
-            "description": "对多个患者的 B/M 图像文件夹进行批量检测。",
+            "description": "Run batch detection on B/M image folders for multiple patients.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "b_folder_path": {
                         "type": "string",
-                        "description": "B 模式图像文件夹路径。",
+                        "description": "Folder path for B-mode images.",
                     },
                     "m_folder_path": {
                         "type": "string",
-                        "description": "M 模式图像文件夹路径。",
+                        "description": "Folder path for M-mode images.",
                     },
                 },
                 "required": ["b_folder_path", "m_folder_path"],
@@ -400,7 +401,7 @@ QWEN_TOOLS = [
 
 def _parse_merged_key(merged_key: str) -> tuple[str | None, str | None]:
     """
-    解析 merged_key，例如 "25-11-08-C113" -> ("25-11-08", "C113")
+    Parse merged_key, e.g. "25-11-08-C113" -> ("25-11-08", "C113")
     """
     if not isinstance(merged_key, str):
         return None, None
@@ -412,10 +413,10 @@ def _parse_merged_key(merged_key: str) -> tuple[str | None, str | None]:
 
 def _build_detection_summary_from_tool_result(tool_result: Dict[str, Any]) -> Dict[str, Any]:
     """
-    根据 MCP 工具返回的结果（单个或批量），构造一个结构化的总结 JSON，
-    包含：按患者 ID 的汇总信息、复检情况、以及缺失模态统计（如有）。
+    Build a structured summary JSON from MCP tool results (single or batch),
+    including per-patient summaries, recheck info, and missing modality stats (if any).
     """
-    # 1) 统一整理 items 列表
+    # 1) Normalize items list
     if "items" in tool_result:
         mode = "batch"
         raw_items: List[Dict[str, Any]] = list(tool_result.get("items") or [])
@@ -440,7 +441,7 @@ def _build_detection_summary_from_tool_result(tool_result: Dict[str, Any]) -> Di
             }
         )
 
-    # 2) 识别复检患者（同一 patient_id 多个不同日期）
+    # 2) Identify recheck patients (same patient_id across different dates)
     visits_by_pid: Dict[str, List[Dict[str, Any]]] = {}
     for it in items_enriched:
         pid = it.get("patient_id")
@@ -452,7 +453,7 @@ def _build_detection_summary_from_tool_result(tool_result: Dict[str, Any]) -> Di
     for pid, visits in visits_by_pid.items():
         dates = sorted({v.get("date") for v in visits if v.get("date")})
         if len(dates) > 1:
-            # 多个日期，视为复检
+            # Multiple dates -> recheck
             recheck_patients.append(
                 {
                     "patient_id": pid,
@@ -463,7 +464,7 @@ def _build_detection_summary_from_tool_result(tool_result: Dict[str, Any]) -> Di
                 }
             )
 
-    # 3) 缺失模态统计（依赖 missing_modality_samples.csv，如存在）
+    # 3) Missing modality summary (from missing_modality_samples.csv if present)
     missing_summary: Dict[str, Any] | None = None
     detect_output_dir = tool_result.get("detect_output_dir")
     if isinstance(detect_output_dir, str) and detect_output_dir:
@@ -487,10 +488,10 @@ def _build_detection_summary_from_tool_result(tool_result: Dict[str, Any]) -> Di
                     "csv_path": missing_csv_path,
                 }
             except Exception:
-                # 读取失败则忽略缺失统计，避免中断主流程
+                # Ignore missing stats if reading fails
                 missing_summary = None
 
-    # 4) 汇总整体信息
+    # 4) Overall summary
     all_probs = [it["risk_probability"] for it in items_enriched]
     avg_prob = float(sum(all_probs) / len(all_probs)) if all_probs else 0.0
 
@@ -509,20 +510,20 @@ def _build_detection_summary_from_tool_result(tool_result: Dict[str, Any]) -> Di
 
 async def _call_mcp_tool(tool_name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
     """
-    由 Agent 示例使用：根据工具名和参数真正调用 MCP 工具。
-    这里直接使用 FastMCP Client 的通用调用方式。
+    Used by the agent example: call an MCP tool by name and arguments.
+    This uses the FastMCP client's generic call method.
     """
-    # 首先尝试使用复用的全局 client（提高性能，避免频繁重启子进程）
+    # First try the reused global client (performance; avoid frequent restarts)
     try:
         client = await get_mcp_client("agent_et_mcp.py")
         try:
             result = await client.call_tool(tool_name, arguments)
         except RuntimeError:
-            # 如果 client 尚未连接或 session 无效，回退到短生命周期的 context 调用
+            # If the client is not connected or session is invalid, fall back to a short-lived context
             client = None
         else:
             normalized = _normalize_mcp_result(result)
-            # 记录 detect_output_dir，便于后续清理历史检测输出
+            # Track detect_output_dir for cleanup
             try:
                 d = normalized.get("detect_output_dir")
                 if isinstance(d, str) and d:
@@ -532,14 +533,14 @@ async def _call_mcp_tool(tool_name: str, arguments: Dict[str, Any]) -> Dict[str,
                 pass
             return normalized
     except Exception:
-        # 任何异常都回退到短生命周期 context 调用
+    # On any error, fall back to short-lived context
         client = None
 
-    # 如果复用 client 不可用，则使用短生命周期的 async with Client(...) 调用
+    # If the reused client is unavailable, use a short-lived async context client
     async with Client("agent_et_mcp.py") as transient_client:
         result = await transient_client.call_tool(tool_name, arguments)
         normalized = _normalize_mcp_result(result)
-    # 记录 detect_output_dir，便于后续清理历史检测输出
+    # Track detect_output_dir for cleanup
         try:
             d = normalized.get("detect_output_dir")
             if isinstance(d, str) and d:
@@ -551,7 +552,7 @@ async def _call_mcp_tool(tool_name: str, arguments: Dict[str, Any]) -> Dict[str,
 
 
 async def _cleanup_previous_detect_outputs() -> None:
-    """删除上一次 run 中记录的 detect_output_dir（如果存在），并清空记录。"""
+    """Delete detect_output_dir recorded from the previous run (if any) and clear the list."""
     global _last_detect_output_dirs
     if not _last_detect_output_dirs:
         return
@@ -560,7 +561,7 @@ async def _cleanup_previous_detect_outputs() -> None:
             if d and os.path.exists(d) and os.path.isdir(d):
                 shutil.rmtree(d)
         except Exception:
-            # 忽略删除失败，继续尝试其它目录
+            # Ignore delete failures and continue
             pass
     _last_detect_output_dirs = []
 
@@ -571,7 +572,7 @@ def export_agent_conversation(messages: List[Dict[str, Any]],
                               final_response: str,
                               out_dir: str = "detect") -> str:
     """
-    导出 agent 的完整对话记录（messages + tool_calls + tool_results + final_response）到 JSON 文件，返回文件路径。
+    Export the agent conversation (messages + tool_calls + tool_results + final_response) to JSON and return the file path.
     """
     try:
         os.makedirs(out_dir, exist_ok=True)
@@ -592,46 +593,46 @@ def export_agent_conversation(messages: List[Dict[str, Any]],
 
 
 def _normalize_mcp_result(result: Any) -> Dict[str, Any]:
-    """
-    将 FastMCP / MCP 工具的返回值标准化为 Python dict。
+        """
+        Normalize FastMCP/MCP tool results into a Python dict.
 
-    支持的输入示例：
-      - list[...]（包含 TextContent 对象，其 .text 字段是 JSON 字符串）
-      - dict（已经是标准 dict）
-      - CallToolResult（具有 structured_content / content / data 属性）
-      - 其它可字符串化的对象
+        Supported inputs:
+            - list[...] (contains TextContent objects whose .text is JSON)
+            - dict (already a dict)
+            - CallToolResult (has structured_content / content / data)
+            - other objects convertible to string
 
-    返回：若能解析为 JSON 或 structured_content，则返回对应 dict；否则返回 {"raw": str(result)}。
-    """
-    # 1) 直接的 list（常见于 fastmcp 返回）
+        Returns: parsed dict when possible; otherwise {"raw": str(result)}.
+        """
+        # 1) Direct list (common in fastmcp returns)
     try:
         if isinstance(result, list) and result:
             first = result[0]
-            # 某些实现中 element 有 .text
+            # Some implementations expose .text on the element
             text = getattr(first, "text", None)
             if isinstance(text, str):
                 try:
                     return json.loads(text)
                 except Exception:
                     return {"raw": text}
-            # 或者 element 本身就是 dict-like
+            # Or the element itself is dict-like
             if isinstance(first, dict):
                 return first
 
-        # 2) 直接是 dict
+    # 2) Direct dict
         if isinstance(result, dict):
             return result
 
-        # 3) FastMCP 的 CallToolResult 可能带有 structured_content 属性
+    # 3) CallToolResult may include structured_content
         structured = getattr(result, "structured_content", None)
         if structured:
             try:
-                # structured_content 通常已经是 dict
+                # structured_content is usually already a dict
                 return dict(structured)
             except Exception:
                 return {"raw_structured": str(structured)}
 
-        # 4) content 列表也常见：取第一个元素的 .text
+    # 4) content list is common: use first element's .text
         content = getattr(result, "content", None)
         if content and len(content) > 0:
             first = content[0]
@@ -642,10 +643,10 @@ def _normalize_mcp_result(result: Any) -> Dict[str, Any]:
                 except Exception:
                     return {"raw": text}
 
-        # 5) data 字段（有时为 pydantic 模型或类似对象）
+    # 5) data field (sometimes a pydantic model or similar)
         data = getattr(result, "data", None)
         if data is not None:
-            # 如果是 pydantic BaseModel
+            # If it's a pydantic BaseModel
             try:
                 if hasattr(data, "dict"):
                     return data.dict()
@@ -657,10 +658,10 @@ def _normalize_mcp_result(result: Any) -> Dict[str, Any]:
                 return {"raw_data": str(data)}
 
     except Exception:
-        # 避免在解析器内抛出异常，统一回退为 raw 字符串
+    # Avoid raising inside the parser; fall back to raw string
         return {"raw": str(result)}
 
-    # 最后兜底：返回原始字符串
+    # Final fallback: return raw string
     return {"raw": str(result)}
 
 
@@ -674,68 +675,68 @@ async def run_qwen_agent(
     model: str = DEFAULT_QWEN_MODEL,
     user_query: str = None,
 ) -> Dict[str, Any]:
-    """
-    真正的 Agent 行为——让 Qwen 自己“决定调用哪个检测工具”。
+        """
+        True agent behavior—let Qwen decide which detection tool to call.
 
-    参数：
-      - b_image_path, m_image_path: 单组检测的图片路径
-      - b_folder_path, m_folder_path: 批量检测的文件夹路径
-      - api_key: Qwen API Key
-      - base_url: API base URL（默认 SiliconFlow）
-      - model: 模型名称（默认 Qwen3-8B）
-      - user_query: 用户自然语言需求（可选，会自动生成）
+        Args:
+            - b_image_path, m_image_path: image paths for a single exam
+            - b_folder_path, m_folder_path: folder paths for batch exams
+            - api_key: Qwen API key
+            - base_url: API base URL (default SiliconFlow)
+            - model: model name (default Qwen3-8B)
+            - user_query: user natural language request (optional; auto-generated)
 
-    返回：
-      {
-        "tool_calls": [...],  # 工具调用记录
-        "tool_results": {...},  # 工具返回结果
-        "final_response": "...",  # Qwen 最终回答
-      }
-    """
+        Returns:
+            {
+                "tool_calls": [...],  # tool call records
+                "tool_results": {...},  # tool results
+                "final_response": "...",  # Qwen final response
+            }
+        """
     if not api_key:
-        raise ValueError("必须提供 api_key")
+    raise ValueError("api_key is required")
 
-    # 自动生成 user_query（如果未提供）
+    # Auto-generate user_query (if not provided)
     if not user_query:
         if b_image_path and m_image_path:
             user_query = f"""
-我这边有一名患者的一组膈肌超声图像，请你根据需要调用合适的检测工具：
-- B 模式图片路径：{b_image_path}
-- M 模式图片路径：{m_image_path}
+I have a patient's diaphragm ultrasound image pair. Please call the appropriate detection tool as needed:
+- B-mode image path: {b_image_path}
+- M-mode image path: {m_image_path}
 
-请你：
-1. 没有调用工具之前不要给出任何结论，你必须要真正的调用MCP工具才能继续回答；
-2. 先根据这些路径，选择并调用正确的自动检测工具；
-3. 拿到检测 JSON 结果后，说明该患者的患病风险概率和风险级别；
-4. 给出 1~3 条中文的临床建议；
-5. 提醒这是模型预测结果，不能替代医生诊断。
-6. 只要用户提供了 B/M 图像路径，就必须优先调用检测工具；
-7. 在未调用工具前，不得基于假设给出风险判断；
-8. 工具调用是强制步骤，而不是可选步骤；
-9. 可选步骤是根据用户输入的路径选择调用哪个工具。
-10.不能虚假的调用工具，用户能够看到你是否真正调用了工具。
+Please:
+1. Do not provide any conclusions before calling a tool; you must actually call the MCP tool before responding.
+2. Choose and call the correct detection tool based on these paths.
+3. After getting the JSON result, explain the patient's risk probability and risk level.
+4. Provide 1–3 clinical suggestions in English.
+5. Remind that this is a model prediction and cannot replace a doctor's diagnosis.
+6. As long as the user provides B/M image paths, you must call the detection tool first.
+7. Before calling a tool, do not infer risk based on assumptions.
+8. Tool calling is mandatory, not optional.
+9. The optional step is choosing which tool to call based on the input paths.
+10. Do not fake tool calls; the user can see whether you actually called the tool.
 """
         elif b_folder_path and m_folder_path:
             user_query = f"""
-我这边有多个患者的膈肌超声图像文件夹，请你根据需要调用合适的批量检测工具：
-- B 模式图片文件夹路径：{b_folder_path}
-- M 模式图片文件夹路径：{m_folder_path}
+I have folders of diaphragm ultrasound images for multiple patients. Please call the appropriate batch detection tool:
+- B-mode image folder path: {b_folder_path}
+- M-mode image folder path: {m_folder_path}
 
-请你：
-1. 没有调用工具之前不要给出任何结论，你必须要真正的调用MCP工具才能继续回答；
-2. 先根据这些路径，选择并调用正确的批量检测工具（detect_batch_folders）；
-3. 拿到检测 JSON 结果后，统计并说明所有患者的患病风险分布；
-4. 指出高风险患者（例如 risk_probability > 0.7）并列出他们的 ID 和概率；
-5. 给出 1~3 条临床或管理建议；
-6. 提醒这是模型预测结果，不能替代医生诊断。
+Please:
+1. Do not provide any conclusions before calling a tool; you must actually call the MCP tool before responding.
+2. Choose and call the correct batch detection tool (detect_batch_folders).
+3. After getting the JSON result, summarize the risk distribution across patients.
+4. Identify high-risk patients (e.g., risk_probability > 0.7) and list their IDs and probabilities.
+5. Provide 1–3 clinical or management suggestions.
+6. Remind that this is a model prediction and cannot replace a doctor's diagnosis.
 """
         else:
-            raise ValueError("必须提供 (b_image_path, m_image_path) 或 (b_folder_path, m_folder_path)")
+            raise ValueError("Provide (b_image_path, m_image_path) or (b_folder_path, m_folder_path)")
 
-    # 先清理上一次检测遗留的输出（如果有）
+    # Clean up outputs from the previous run (if any)
     await _cleanup_previous_detect_outputs()
 
-    # 获取 Qwen client
+    # Get Qwen client
     client = get_qwen_client(api_key=api_key, base_url=base_url)
 
     messages = [
@@ -743,13 +744,13 @@ async def run_qwen_agent(
         {"role": "user", "content": user_query},
     ]
 
-    # 尝试动态从 MCP 获取工具定义，优先使用运行中的 MCP
+    # Try to fetch tools dynamically from MCP, prefer the running MCP
     try:
         tools = await mcp_list_tools("agent_et_mcp.py")
     except Exception:
         tools = QWEN_TOOLS
 
-    # 步骤1：让 Qwen 决定调用哪个工具（将 tools 动态传入）
+    # Step 1: let Qwen decide which tool to call (dynamic tools list)
     first = client.chat.completions.create(
         model=model,
         messages=messages,
@@ -772,7 +773,7 @@ async def run_qwen_agent(
     tool_results_dict = {}
     detection_summary: Dict[str, Any] | None = None
 
-    # 如果没有 tool_calls，直接返回模型回答
+    # If there are no tool calls, return the model response directly
     if not assistant_msg.tool_calls:
         return {
             "tool_calls": [],
@@ -780,7 +781,7 @@ async def run_qwen_agent(
             "final_response": assistant_msg.content or "",
         }
 
-    # 步骤2：执行每个工具调用
+    # Step 2: execute each tool call
     for tool_call in assistant_msg.tool_calls:
         tool_name = tool_call.function.name
         raw_args = tool_call.function.arguments or "{}"
@@ -794,7 +795,7 @@ async def run_qwen_agent(
         tool_result = await _call_mcp_tool(tool_name, args)
         tool_results_dict[tool_name] = tool_result
 
-        # 把工具结果作为 tool 消息加入对话历史
+    # Add tool result as a tool message in the conversation history
         messages.append(
             {
                 "role": "tool",
@@ -804,35 +805,35 @@ async def run_qwen_agent(
             }
         )
 
-        # 顺便尝试构建一个结构化的汇总（只需构建一次即可）
+    # Try to build a structured summary (only once)
         if detection_summary is None and isinstance(tool_result, dict):
             try:
                 detection_summary = _build_detection_summary_from_tool_result(tool_result)
             except Exception:
                 detection_summary = None
 
-    # 如果成功构建了结构化汇总，把它作为额外提示信息给到 Qwen，
-    # 明确请求在最终回答中参考其中的复检信息和缺失模态信息。
+    # If a structured summary is available, provide it to Qwen as extra context,
+    # asking it to reference recheck info and missing modality info in the final response.
     if detection_summary is not None:
         summary_str = json.dumps(detection_summary, ensure_ascii=False, indent=2)
         messages.append(
             {
                 "role": "user",
                 "content": (
-                    "下面是系统根据检测工具返回结果整理出的结构化总结 JSON，"
-                    "其中已经提取了每个样本的 merged_key（检查日期 + 患者 ID）、"
-                    "复检患者列表（同一 ID 在不同日期的多次检查）、以及缺失模态统计信息：\n\n"
+                    "Below is a structured summary JSON generated from the tool results,"
+                    " including merged_key (exam date + patient ID), recheck patient list,"
+                    " and missing modality statistics:\n\n"
                     f"{summary_str}\n\n"
-                    "在给出最终中文报告时，请务必：\n"
-                    "1）正确理解 merged_key 中的检查日期和患者 ID；\n"
-                    "2）特别指出有哪些患者存在复检，并比较不同日期之间的风险变化；\n"
-                    "3）如果存在缺失模态（missing modality），在报告中单独说明这一点；\n"
-                    "4）其余要求仍然按系统提示中的说明执行。"
+                    "When producing the final English report, please:\n"
+                    "1) Correctly interpret the exam date and patient ID in merged_key;\n"
+                    "2) Highlight patients with rechecks and compare risk trends across dates;\n"
+                    "3) If missing modality cases exist, mention them explicitly;\n"
+                    "4) Follow the remaining system instructions as stated."
                 ),
             }
         )
 
-    # 步骤3：让 Qwen 基于工具结果和结构化总结给出最终回答
+        # Step 3: let Qwen produce the final response based on tool results and summary
     second = client.chat.completions.create(
         model=model,
         messages=messages,
@@ -840,9 +841,9 @@ async def run_qwen_agent(
     )
 
     final_msg = second.choices[0].message
-    # 如果模型没有生成文本回答，收集调试信息以便排查
+    # If the model returns empty text, collect debug info for troubleshooting
     def _sanitize_for_json(x):
-        # 递归将复杂对象转换为 JSON-可序列化的形式（不可识别的对象将被 str()）
+    # Recursively convert objects into JSON-serializable forms (fallback to str)
         if x is None:
             return None
         if isinstance(x, (str, int, float, bool)):
@@ -852,7 +853,7 @@ async def run_qwen_agent(
         if isinstance(x, list):
             return [_sanitize_for_json(v) for v in x]
         try:
-            # 尝试直接序列化常见类型
+            # Try to serialize common types directly
             return json.loads(json.dumps(x))
         except Exception:
             try:
@@ -862,7 +863,7 @@ async def run_qwen_agent(
 
     final_text = final_msg.content or ""
 
-    # 导出对话记录（可供下载）
+    # Export conversation (downloadable)
     convo_path = export_agent_conversation(messages, tool_calls_info, tool_results_dict, final_text)
 
     result_obj = {
@@ -873,7 +874,7 @@ async def run_qwen_agent(
     }
 
     if not final_text.strip():
-        # 补充可读的 debug 信息
+    # Add readable debug information
         debug = {
             "messages": _sanitize_for_json(messages),
             "assistant_msg_tool_calls": _sanitize_for_json(getattr(choice, 'message', None) and getattr(choice.message, 'tool_calls', None)),
