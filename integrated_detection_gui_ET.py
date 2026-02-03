@@ -364,7 +364,17 @@ class DetectionPipeline:
                 )
 
         if not merged_rows:
-            raise ValueError("No matched B/M pairs found for merging")
+            self.log("No matched B/M pairs found for merging; returning empty merged_df")
+            merged_df = pd.DataFrame(
+                columns=[
+                    "merged_filename",
+                    "b_filename",
+                    "m_filename",
+                ]
+                + [f"M_{c}" for c in m_features]
+                + [f"B_{c}" for c in b_features]
+            )
+            return merged_df
 
         merged_df = pd.DataFrame(
             merged_rows,
@@ -534,10 +544,18 @@ class DetectionPipeline:
             df_m.to_csv(os.path.join(output_dir, "m_features_reduced.csv"), index=False)
 
             merged_df = self.merge_features(df_b, df_m)
-            probabilities, predictions = self.predict(merged_df)
-            _, results_df = self.save_results(
-                merged_df, probabilities, predictions, output_dir
-            )
+            if merged_df is None or merged_df.empty:
+                # 没有匹配的 B/M 样本，但仍需写出缺失模态 CSV 和空结果文件
+                probabilities = np.array([])
+                predictions = np.array([])
+                _, results_df = self.save_results(
+                    merged_df, probabilities, predictions, output_dir
+                )
+            else:
+                probabilities, predictions = self.predict(merged_df)
+                _, results_df = self.save_results(
+                    merged_df, probabilities, predictions, output_dir
+                )
 
             self.log("=" * 60)
             self.log("Detection finished!")
