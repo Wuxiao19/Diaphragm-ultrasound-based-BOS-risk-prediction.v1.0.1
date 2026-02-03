@@ -296,6 +296,12 @@ with st.expander("点击展开：配置 Qwen（SiliconFlow/OpenAI 兼容接口�
         "Model（保持默认即可）",
         value=os.getenv("QWEN_MODEL", "Qwen/Qwen3-8B"),
     )
+    agent_language = st.selectbox(
+        "输出语言 / Output language",
+        options=["中文", "English"],
+        index=0,
+        key="agent_language",
+    )
 
 st.info("🤖 **Agent 模式**：直接基于你上传的图像，调用后端检测工具并生成完整分析，无需先点击 Run inference。")
 
@@ -360,6 +366,7 @@ if st.button("🚀 启动 Qwen Agent（自动调用检测工具）", type="prima
                             api_key=qwen_api_key.strip(),
                             base_url=qwen_base_url.strip(),
                             model=qwen_model.strip(),
+                            language=st.session_state.get("agent_language", "中文"),
                         )
                     )
                 elif b_folder_for_agent and m_folder_for_agent:
@@ -370,6 +377,7 @@ if st.button("🚀 启动 Qwen Agent（自动调用检测工具）", type="prima
                             api_key=qwen_api_key.strip(),
                             base_url=qwen_base_url.strip(),
                             model=qwen_model.strip(),
+                            language=st.session_state.get("agent_language", "中文"),
                         )
                     )
                 else:
