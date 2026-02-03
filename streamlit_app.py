@@ -100,7 +100,7 @@ def to_relative_path(abs_path: str) -> str:
     """
     try:
         abs_path_obj = Path(abs_path)
-    # Prefer a path relative to the current working directory
+        # Prefer a path relative to the current working directory
         try:
             rel_path = abs_path_obj.relative_to(Path.cwd())
             return str(rel_path)
@@ -111,10 +111,9 @@ def to_relative_path(abs_path: str) -> str:
                 idx = parts.index("uploaded_inputs")
                 rel_parts = parts[idx:]
                 return str(Path(*rel_parts))
-            # Final fallback: just return the filename
             return abs_path_obj.name
     except Exception:
-    # Return the original path on any exception to avoid breaking the flow
+        # Return the original path on any exception to avoid breaking the flow
         return abs_path
 
 
@@ -299,11 +298,11 @@ with st.expander("Click to expand: Configure Qwen (SiliconFlow/OpenAI compatible
         value=os.getenv("QWEN_API_KEY", ""),
     )
     qwen_base_url = st.text_input(
-        "Base URL (keep default)",
+        "Base URL",
         value=os.getenv("QWEN_BASE_URL", "https://api.siliconflow.cn/v1"),
     )
     qwen_model = st.text_input(
-        "Model (keep default)",
+        "Model",
         value=os.getenv("QWEN_MODEL", "Qwen/Qwen3-8B"),
     )
 
