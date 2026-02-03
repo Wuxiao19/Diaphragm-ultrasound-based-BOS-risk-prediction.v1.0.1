@@ -95,33 +95,33 @@ def save_uploaded_files_as_folder(uploaded_files, subdir: str) -> str:
 
 def to_relative_path(abs_path: str) -> str:
     """
-    将绝对路径转换为相对于项目根目录的相对路径，主要用于把本地保存的
-    uploaded_inputs 路径，转换成 MCP 服务器也能识别的形式。
+    Convert an absolute path to a project-root-relative path. This is mainly used
+    to turn local uploaded_inputs paths into a form that the MCP server can resolve.
     """
     try:
         abs_path_obj = Path(abs_path)
-        # 优先尝试：相对于当前工作目录的相对路径
+    # Prefer a path relative to the current working directory
         try:
             rel_path = abs_path_obj.relative_to(Path.cwd())
             return str(rel_path)
         except ValueError:
-            # 如果无法直接 relative_to，则尝试截取 "uploaded_inputs" 之后的部分
+            # If relative_to fails, try slicing after "uploaded_inputs"
             parts = abs_path_obj.parts
             if "uploaded_inputs" in parts:
                 idx = parts.index("uploaded_inputs")
                 rel_parts = parts[idx:]
                 return str(Path(*rel_parts))
-            # 最后兜底：只返回文件名
+            # Final fallback: just return the filename
             return abs_path_obj.name
     except Exception:
-        # 任何异常都直接返回原始路径，避免中断流程
+    # Return the original path on any exception to avoid breaking the flow
         return abs_path
 
 
 # Keep at most this number of recent detect/runX directories (older ones are removed).
 KEEP_LAST_RUNS = 20
 
-# 初始化 session_state
+# Initialize session_state
 if "last_upload_key" not in st.session_state:
     st.session_state["last_upload_key"] = None
 if "detect_output_dir" not in st.session_state:
@@ -129,7 +129,7 @@ if "detect_output_dir" not in st.session_state:
 
 
 def _on_file_uploader_change(mode: str) -> None:
-    """当用户上传新文件时，清除旧的检测结果，防止重复检测。"""
+    """Clear previous detection results when the user uploads new files."""
     st.session_state.pop("agent_result", None)
     st.session_state["detect_output_dir"] = None
 
@@ -143,23 +143,23 @@ def _render_agent_result(ar: dict) -> None:
     if not ar:
         return
 
-    with st.expander("🔧 查看：Qwen 调用了哪些工具", expanded=False):
+    with st.expander("🔧 View: Tools called by Qwen", expanded=False):
         if ar.get("tool_calls"):
             for i, tc in enumerate(ar["tool_calls"], 1):
-                st.write(f"**工具 {i}**：`{tc['name']}`")
+                st.write(f"**Tool {i}**: `{tc['name']}`")
                 st.json(tc["arguments"])
         else:
-            st.write("（本次未调用工具）")
+            st.write("(No tools called this run)")
 
-    with st.expander("📊 查看：工具返回的原始 JSON（调试用）", expanded=False):
+    with st.expander("📊 View: Raw JSON returned by tools (debug)", expanded=False):
         if ar.get("tool_results"):
             for name, res in ar.get("tool_results", {}).items():
-                st.write(f"**{name}** 返回结果：")
+                st.write(f"**{name}** result:")
                 st.json(res)
         else:
-            st.write("（无工具返回结果）")
+            st.write("(No tool results)")
 
-    st.markdown("### 💬 Qwen Agent 的完整分析")
+    st.markdown("### 💬 Qwen Agent full analysis")
     detection_summary = None
     if isinstance(ar.get("tool_results"), dict):
         for name, res in ar.get("tool_results", {}).items():
@@ -172,25 +172,25 @@ def _render_agent_result(ar: dict) -> None:
 
     if detection_summary:
         cols = st.columns([1, 1, 1])
-        cols[0].metric("样本数量", detection_summary.get("total_samples", 0))
-        cols[1].metric("平均风险概率", f"{detection_summary.get('average_probability', 0.0):.3f}")
-        cols[2].metric("复检患者数", len(detection_summary.get("recheck_patients", [])))
+    cols[0].metric("Samples", detection_summary.get("total_samples", 0))
+    cols[1].metric("Average risk probability", f"{detection_summary.get('average_probability', 0.0):.3f}")
+    cols[2].metric("Recheck patients", len(detection_summary.get("recheck_patients", [])))
 
-        st.markdown("**样本详情（表格）**")
+    st.markdown("**Sample details (table)**")
         items_df = pd.DataFrame(detection_summary.get("items", []))
         if not items_df.empty:
             st.dataframe(items_df)
 
         high_risk = items_df[items_df["risk_probability"] > 0.7] if not items_df.empty else pd.DataFrame()
         if not high_risk.empty:
-            st.warning("检测到高风险患者（risk_probability > 0.7）：")
+            st.warning("High-risk patients detected (risk_probability > 0.7):")
             st.table(high_risk[["merged_key", "patient_id", "date", "risk_probability"]])
 
         if detection_summary.get("recheck_patients"):
-            with st.expander("复检患者（同一患者在不同日期的随访）", expanded=False):
+            with st.expander("Recheck patients (same patient across dates)", expanded=False):
                 for rp in detection_summary.get("recheck_patients", []):
-                    st.write(f"患者 ID：{rp.get('patient_id')}")
-                    st.write("检查日期：" + ", ".join(rp.get("exam_dates", [])))
+                    st.write(f"Patient ID: {rp.get('patient_id')}")
+                    st.write("Exam dates: " + ", ".join(rp.get("exam_dates", [])))
                     st.dataframe(pd.DataFrame(rp.get("visits", [])))
 
         if detection_summary.get("missing_modality_summary"):
@@ -198,25 +198,25 @@ def _render_agent_result(ar: dict) -> None:
             total_missing = ms.get("total_missing_samples", 0)
             missing_by_type = ms.get("missing_by_type") or {}
 
-            st.markdown("### ⚠️ 缺失模态样本")
-            st.metric("缺失样本数", total_missing)
+            st.markdown("### ⚠️ Missing modality samples")
+            st.metric("Missing samples", total_missing)
             if missing_by_type:
                 summary_df = pd.DataFrame(
                     [
-                        {"缺失类型": k, "数量": v}
+                        {"Missing type": k, "Count": v}
                         for k, v in missing_by_type.items()
                     ]
                 )
-                st.markdown("**缺失类型统计**")
+                st.markdown("**Missing type summary**")
                 st.table(summary_df)
 
     final_text = ar.get("final_response", "")
     if final_text:
         st.markdown("---")
-        st.markdown("#### 原始模型文本输出")
+        st.markdown("#### Raw model output")
         st.markdown(final_text)
     else:
-        st.info("（模型未生成文本；请查看调试信息）")
+        st.info("(Model produced no text; check debug info.)")
 
 
 # ============================================================
@@ -282,36 +282,36 @@ with col_m:
         )
 
 # ============================================================
-# 全局：Qwen Agent 模式
+# Global: Qwen Agent mode
 # ============================================================
 st.markdown("---")
-st.subheader("2. AI 检测与解读（Qwen3-8B Agent）")
+st.subheader("2. AI detection and interpretation (Qwen3-8B Agent)")
 st.caption(
-    "说明：本模式下，你只需要在上方上传膈肌 B 模式和 M 模式超声图像，"
-    "Qwen 会自动调用后端的检测流水线（MCP 工具），完成特征提取和风险预测，然后给出中文解读。"
-    "该解读不能替代医生最终诊断。"
+    "Note: In this mode, simply upload B-mode and M-mode diaphragm ultrasound images above. "
+    "Qwen will call the backend detection pipeline (MCP tools), complete feature extraction "
+    "and risk prediction, then generate an English interpretation. This cannot replace a doctor's diagnosis."
 )
 
-with st.expander("点击展开：配置 Qwen（SiliconFlow/OpenAI 兼容接口）", expanded=False):
+with st.expander("Click to expand: Configure Qwen (SiliconFlow/OpenAI compatible API)", expanded=False):
     qwen_api_key = st.text_input(
-        "Qwen API Key（建议填到环境变量 QWEN_API_KEY；这里也可临时输入）",
+        "Qwen API Key (recommended via QWEN_API_KEY env var; you can also enter it here)",
         type="password",
         value=os.getenv("QWEN_API_KEY", ""),
     )
     qwen_base_url = st.text_input(
-        "Base URL（保持默认即可）",
+        "Base URL (keep default)",
         value=os.getenv("QWEN_BASE_URL", "https://api.siliconflow.cn/v1"),
     )
     qwen_model = st.text_input(
-        "Model（保持默认即可）",
+        "Model (keep default)",
         value=os.getenv("QWEN_MODEL", "Qwen/Qwen3-8B"),
     )
 
-st.info("🤖 **Agent 模式**：直接基于你上传的图像，调用后端检测工具并生成完整分析，无需先点击 Run inference。")
+st.info("🤖 **Agent mode**: directly use your uploaded images, call backend detection tools, and generate a full analysis. No need to click Run inference first.")
 
 
 def _run_agent_safe(**kwargs):
-    """调用 run_qwen_agent，兼容旧版本不支持 language 参数的情况。"""
+    """Call run_qwen_agent and handle older versions without the language parameter."""
     try:
         return asyncio.run(run_qwen_agent(**kwargs))
     except TypeError as e:
@@ -322,19 +322,19 @@ def _run_agent_safe(**kwargs):
 
 
 
-if st.button("🚀 启动 Qwen Agent（自动调用检测工具）", type="primary"):
+if st.button("🚀 Run Qwen Agent (auto-call detection tools)", type="primary"):
     if not qwen_api_key.strip():
-        st.error("请先填写 Qwen API Key（或在系统环境变量里设置 QWEN_API_KEY）。")
+        st.error("Please provide a Qwen API Key (or set QWEN_API_KEY in the environment).")
     else:
-        # 根据当前输入模式，准备传给 Agent 的本地路径
+        # Prepare local paths for the agent based on input mode
         b_path_for_agent = None
         m_path_for_agent = None
         b_folder_for_agent = None
         m_folder_for_agent = None
 
         try:
-            # 在保存新上传文件之前，删除 uploaded_inputs 下的历史上传子目录，
-            # 避免旧文件被误加入到这次的 MCP 检测中。
+            # Before saving new uploads, remove old uploaded_inputs subdirs
+            # to avoid mixing old files into this MCP run.
             try:
                 upload_root = ensure_upload_dir()
                 for child in upload_root.iterdir():
@@ -345,36 +345,36 @@ if st.button("🚀 启动 Qwen Agent（自动调用检测工具）", type="prima
 
             if input_mode == "single":
                 if not ("b_file" in locals() and b_file) or not ("m_file" in locals() and m_file):
-                    st.error("请先在上方上传一张 B 模式和一张 M 模式图片。")
+                    st.error("Please upload one B-mode and one M-mode image above.")
                     st.stop()
 
-                # 保存单张图片到本地 uploaded_inputs 子目录
+                # Save single images to uploaded_inputs subdirectories
                 b_abs = save_uploaded_file(b_file, _new_run_subdir("B_single_agent"))
                 m_abs = save_uploaded_file(m_file, _new_run_subdir("M_single_agent"))
 
-                # 直接传递绝对路径，避免 MCP 在 uploaded_inputs 根目录下混合旧文件
+                # Pass absolute paths to avoid MCP mixing old files under uploaded_inputs
                 b_path_for_agent = str(Path(b_abs).resolve())
                 m_path_for_agent = str(Path(m_abs).resolve())
 
-            else:  # folder 模式
+            else:  # folder mode
                 if not ("b_files" in locals() and b_files) or len(b_files) == 0:
-                    st.error("请先上传至少一张 B 模式图片（批量模式）。")
+                    st.error("Please upload at least one B-mode image (batch mode).")
                     st.stop()
                 if not ("m_files" in locals() and m_files) or len(m_files) == 0:
-                    st.error("请先上传至少一张 M 模式图片（批量模式）。")
+                    st.error("Please upload at least one M-mode image (batch mode).")
                     st.stop()
 
                 b_abs_dir = save_uploaded_files_as_folder(b_files, _new_run_subdir("B_folder_agent"))
                 m_abs_dir = save_uploaded_files_as_folder(m_files, _new_run_subdir("M_folder_agent"))
 
-                # 直接传递绝对目录，避免 MCP 搜索到 uploaded_inputs 其它旧文件
+                # Pass absolute directories to avoid MCP scanning other old uploads
                 b_folder_for_agent = str(Path(b_abs_dir).resolve())
                 m_folder_for_agent = str(Path(m_abs_dir).resolve())
 
-            # 在开始新一次 Agent 运行前，清除上一次的显示（仅在真正开始运行时）
+            # Clear previous results when starting a new agent run
             st.session_state.pop("agent_result", None)
 
-            with st.spinner("🤖 Qwen Agent 正在工作：调用检测工具并生成分析..."):
+            with st.spinner("🤖 Qwen Agent is working: calling detection tools and generating analysis..."):
                 if b_path_for_agent and m_path_for_agent:
                     agent_result = _run_agent_safe(
                         b_image_path=b_path_for_agent,
@@ -392,20 +392,19 @@ if st.button("🚀 启动 Qwen Agent（自动调用检测工具）", type="prima
                         model=qwen_model.strip(),
                     )
                 else:
-                    raise ValueError("无法确定是单组还是批量模式，请检查上传的文件。")
+                    raise ValueError("Unable to determine single or batch mode. Please check your uploads.")
 
-            st.success("✅ Qwen Agent 分析完成！")
+            st.success("✅ Qwen Agent analysis complete!")
 
-            # 将 agent_result 清理为纯可序列化结构后保存到 session_state，
-            # 避免包含非可序列化对象（如 Path、DataFrame 或连接句柄）导致
-            # Streamlit 在 rerun 时无法持久化 session_state 的问题。
+            # Sanitize agent_result into a serializable structure for session_state
+            # to avoid non-serializable objects (Path, DataFrame, handles) on rerun.
             def _sanitize_agent_result(ar):
                 if not isinstance(ar, dict):
                     return ar
                 out = {}
                 for k, v in ar.items():
                     try:
-                        # pandas DataFrame -> records
+                        # pandas DataFrame -> dict
                         if hasattr(v, "to_dict") and callable(getattr(v, "to_dict")):
                             out[k] = v.to_dict()
                         # numpy types
@@ -422,7 +421,7 @@ if st.button("🚀 启动 Qwen Agent（自动调用检测工具）", type="prima
                         else:
                             out[k] = v
                     except Exception:
-                        # 兜底，转换为字符串表示
+                        # Fallback: convert to string
                         try:
                             out[k] = json.loads(json.dumps(v, default=str))
                         except Exception:
@@ -431,12 +430,12 @@ if st.button("🚀 启动 Qwen Agent（自动调用检测工具）", type="prima
 
             sanitized_agent_result = _sanitize_agent_result(agent_result)
 
-            # 持久化 agent 结果到 session_state，这样下载等操作不会清除显示
+            # Persist agent result in session_state so downloads won't clear the view
             st.session_state["agent_result"] = sanitized_agent_result
-            # 注：渲染逻辑在页面全局最后的代码块中，避免重复渲染
+            # Note: rendering is handled in the global block below to avoid duplicates
 
             # ====================================================
-            # 从 MCP 工具结果中解析 detect_output_dir，加载并导出 CSV
+            # Extract detect_output_dir from tool results for CSV preview/download
             # ====================================================
             detect_output_dir = None
             ar = st.session_state.get("agent_result")
@@ -445,27 +444,27 @@ if st.button("🚀 启动 Qwen Agent（自动调用检测工具）", type="prima
                     detect_output_dir = res["detect_output_dir"]
                     break
             
-            # 保存到 session_state，这样下载按钮可以在任何 rerun 中访问它
+            # Save to session_state so download buttons work across reruns
             if detect_output_dir:
                 st.session_state["detect_output_dir"] = detect_output_dir
 
         except Exception as e:
-            st.error(f"❌ Qwen Agent 运行失败：{e}")
+            st.error(f"❌ Qwen Agent failed: {e}")
             import traceback
-            with st.expander("查看详细错误信息", expanded=False):
+            with st.expander("View detailed error info", expanded=False):
                 st.code(traceback.format_exc())
 
-# 如果 session 中存在上一次 agent 的结果，始终渲染它（保证在任何 rerun 后都可见）
+# Always render the last agent result from session_state (visible across reruns)
 if st.session_state.get("agent_result"):
     try:
         _render_agent_result(st.session_state.get("agent_result"))
     except Exception:
-        # 渲染失败不应阻塞主流程，保证页面其它部分可用
+    # Rendering failures should not block the main flow
         pass
 
 
 # ====================================================
-# 全局：显示 CSV 下载和预览（如果有检测结果）
+# Global: show CSV preview and download (if results exist)
 # ====================================================
 detect_output_dir = st.session_state.get("detect_output_dir")
 if isinstance(detect_output_dir, str) and detect_output_dir:
@@ -475,7 +474,7 @@ if isinstance(detect_output_dir, str) and detect_output_dir:
             results_df = pd.read_csv(result_csv_path)
 
             st.markdown("---")
-            st.markdown("### 📊 检测结果预览（来自 MCP 流水线）")
+            st.markdown("### 📊 Detection results preview (from MCP pipeline)")
             key_cols = [
                 "merged_filename",
                 "b_filename",
@@ -488,13 +487,13 @@ if isinstance(detect_output_dir, str) and detect_output_dir:
             st.dataframe(results_df[show_cols] if show_cols else results_df)
 
             st.download_button(
-                label="下载检测结果 CSV",
+                label="Download detection results CSV",
                 data=results_df.to_csv(index=False, encoding="utf-8-sig"),
                 file_name="detect_result.csv",
                 mime="text/csv",
             )
 
-            # 缺失模态样本（如果存在）
+            # Missing modality samples (if any)
             missing_csv_path = os.path.join(detect_output_dir, "missing_modality_samples.csv")
             if os.path.exists(missing_csv_path):
                 try:
@@ -504,8 +503,8 @@ if isinstance(detect_output_dir, str) and detect_output_dir:
 
                 if missing_df is not None and not missing_df.empty:
                     st.warning(
-                        "部分样本缺失 B 或 M 模态，因此未参与最终预测。"
-                        "你可以下载缺失样本列表进行排查。"
+                        "Some samples are missing B or M modality and were not included in prediction. "
+                        "You can download the missing list to review."
                     )
                     with st.expander(
                         "Show list of samples with missing modality (downloadable)",
@@ -513,13 +512,13 @@ if isinstance(detect_output_dir, str) and detect_output_dir:
                     ):
                         st.dataframe(missing_df)
                         st.download_button(
-                            label="下载缺失模态 CSV",
+                            label="Download missing modality CSV",
                             data=missing_df.to_csv(index=False, encoding="utf-8-sig"),
                             file_name="missing_modality_samples.csv",
                             mime="text/csv",
                         )
         except Exception:
-            # 如果读取失败，不影响主流程，只是不显示表格和下载按钮
+            # If reading fails, skip table and downloads
             pass
 
 st.markdown("---")
