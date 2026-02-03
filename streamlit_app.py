@@ -195,10 +195,20 @@ def _render_agent_result(ar: dict) -> None:
 
         if detection_summary.get("missing_modality_summary"):
             ms = detection_summary["missing_modality_summary"]
-            st.info(f"缺失模态样本数：{ms.get('total_missing_samples', 0)}")
-            if ms.get("missing_by_type"):
-                st.write("按缺失类型统计：")
-                st.json(ms.get("missing_by_type"))
+            total_missing = ms.get("total_missing_samples", 0)
+            missing_by_type = ms.get("missing_by_type") or {}
+
+            st.markdown("### ⚠️ 缺失模态样本")
+            st.metric("缺失样本数", total_missing)
+            if missing_by_type:
+                summary_df = pd.DataFrame(
+                    [
+                        {"缺失类型": k, "数量": v}
+                        for k, v in missing_by_type.items()
+                    ]
+                )
+                st.markdown("**缺失类型统计**")
+                st.table(summary_df)
 
     final_text = ar.get("final_response", "")
     if final_text:
