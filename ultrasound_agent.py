@@ -281,6 +281,17 @@ QWEN_SYSTEM_PROMPT = """
 6. 明确提醒：这是基于图像的机器学习模型结果，不能替代医生的最终诊断，最终结论需要结合临床情况由医生判断。
 """
 
+QWEN_SYSTEM_PROMPT_EN = """
+You are an experienced critical care and respiratory rehabilitation specialist who understands risk assessment
+based on diaphragm ultrasound B-mode and M-mode images.
+
+You can use the following tools (already implemented by other modules):
+- detect_single_pair: for a single patient with one B-mode and one M-mode image.
+- detect_batch_folders: for batch inference with B/M image folders.
+
+These tools only work on paired B/M inputs and do not support single-modality inference.
+"""
+
 
 def qwen_explain_detection_sync(
     detection_json: Dict[str, Any],
@@ -696,10 +707,32 @@ async def run_qwen_agent(
     if not api_key:
         raise ValueError("必须提供 api_key")
 
+    # 语言控制（默认为中文）
+    lang = (language or "中文").strip().lower()
+    is_english = lang in ["en", "english", "英文"]
+    lang_instruction = "Please respond in English." if is_english else "请使用中文回答。"
+
     # 自动生成 user_query（如果未提供）
     if not user_query:
         if b_image_path and m_image_path:
-            user_query = f"""
+            if is_english:
+                user_query = f"""
+I have one patient's diaphragm ultrasound images. Please call the appropriate tool:
+- B-mode image path: {b_image_path}
+- M-mode image path: {m_image_path}
+
+Please:
+1. Do NOT provide conclusions before calling the tool; you must call the MCP tool first.
+2. Choose and call the correct detection tool based on the paths above.
+3. After receiving JSON results, explain the patient's risk probability and risk level.
+4. Provide 1-3 clinical recommendations in English.
+5. Remind that this is model output and not a medical diagnosis.
+6. If B/M paths are provided, you must call the tool.
+7. Do not guess risk before tool call.
+8. Tool call is mandatory, not optional.
+"""
+            else:
+                user_query = f"""
 我这边有一名患者的一组膈肌超声图像，请你根据需要调用合适的检测工具：
 - B 模式图片路径：{b_image_path}
 - M 模式图片路径：{m_image_path}
@@ -717,7 +750,22 @@ async def run_qwen_agent(
 10.不能虚假的调用工具，用户能够看到你是否真正调用了工具。
 """
         elif b_folder_path and m_folder_path:
-            user_query = f"""
+            if is_english:
+                user_query = f"""
+I have folders with multiple patients' diaphragm ultrasound images. Please call the batch tool:
+- B-mode folder path: {b_folder_path}
+- M-mode folder path: {m_folder_path}
+
+Please:
+1. Do NOT provide conclusions before calling the tool; you must call the MCP tool first.
+2. Call the batch tool (detect_batch_folders).
+3. After receiving JSON results, summarize the risk distribution across patients.
+4. Highlight high-risk patients (e.g., risk_probability > 0.7) with their IDs and probabilities.
+5. Provide 1-3 clinical or management recommendations in English.
+6. Remind that this is model output and not a medical diagnosis.
+"""
+            else:
+                user_query = f"""
 我这边有多个患者的膈肌超声图像文件夹，请你根据需要调用合适的批量检测工具：
 - B 模式图片文件夹路径：{b_folder_path}
 - M 模式图片文件夹路径：{m_folder_path}
@@ -733,12 +781,6 @@ async def run_qwen_agent(
         else:
             raise ValueError("必须提供 (b_image_path, m_image_path) 或 (b_folder_path, m_folder_path)")
 
-    # 语言控制（默认为中文）
-    lang = (language or "中文").strip().lower()
-    if lang in ["en", "english", "英文"]:
-        lang_instruction = "Please respond in English."
-    else:
-        lang_instruction = "请使用中文回答。"
     if user_query:
         user_query = user_query.strip() + "\n" + lang_instruction
 
@@ -748,8 +790,9 @@ async def run_qwen_agent(
     # 获取 Qwen client
     client = get_qwen_client(api_key=api_key, base_url=base_url)
 
+    system_prompt = QWEN_SYSTEM_PROMPT_EN if is_english else QWEN_SYSTEM_PROMPT
     messages = [
-        {"role": "system", "content": QWEN_SYSTEM_PROMPT},
+        {"role": "system", "content": system_prompt},
         {"role": "user", "content": user_query},
     ]
 
