@@ -172,11 +172,11 @@ def _render_agent_result(ar: dict) -> None:
 
     if detection_summary:
         cols = st.columns([1, 1, 1])
-    cols[0].metric("Samples", detection_summary.get("total_samples", 0))
-    cols[1].metric("Average risk probability", f"{detection_summary.get('average_probability', 0.0):.3f}")
-    cols[2].metric("Recheck patients", len(detection_summary.get("recheck_patients", [])))
+        cols[0].metric("Samples", detection_summary.get("total_samples", 0))
+        cols[1].metric("Average risk probability", f"{detection_summary.get('average_probability', 0.0):.3f}")
+        cols[2].metric("Recheck patients", len(detection_summary.get("recheck_patients", [])))
 
-    st.markdown("**Sample details (table)**")
+        st.markdown("**Sample details (table)**")
         items_df = pd.DataFrame(detection_summary.get("items", []))
         if not items_df.empty:
             st.dataframe(items_df)
