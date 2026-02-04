@@ -73,10 +73,7 @@ async def get_mcp_client(mcp_entry: str = "agent_et_mcp.py") -> Client:
             _ = _mcp_client.session
             return _mcp_client
         except RuntimeError:
-            try:
-                await _mcp_client.__aexit__(None, None, None)
-            except Exception:
-                pass
+            # Session is invalid; drop the client without awaiting a close
             _mcp_client = None
             _mcp_client_entry = None
 
@@ -84,7 +81,7 @@ async def get_mcp_client(mcp_entry: str = "agent_et_mcp.py") -> Client:
     if _mcp_client is not None:
         try:
             await _mcp_client.__aexit__(None, None, None)
-        except Exception:
+        except (Exception, asyncio.CancelledError):
             pass
         _mcp_client = None
         _mcp_client_entry = None
@@ -102,7 +99,7 @@ async def close_mcp_client() -> None:
     if _mcp_client is not None:
         try:
             await _mcp_client.__aexit__(None, None, None)
-        except Exception:
+        except (Exception, asyncio.CancelledError):
             pass
     _mcp_client = None
     _mcp_client_entry = None
