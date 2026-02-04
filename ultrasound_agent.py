@@ -12,6 +12,9 @@ import os
 import re
 from pathlib import Path
 from typing import Dict, Any, List
+import importlib.util
+import inspect
+import sys
 
 import pandas as pd
 from dotenv import load_dotenv
@@ -65,7 +68,17 @@ async def get_mcp_client(mcp_entry: str = "agent_et_mcp.py") -> Client:
     global _mcp_client, _mcp_client_entry
     resolved_entry = _resolve_mcp_entry(mcp_entry)
     if _mcp_client is not None and _mcp_client_entry == resolved_entry:
-        return _mcp_client
+        # Ensure the cached client is still connected
+        try:
+            _ = _mcp_client.session
+            return _mcp_client
+        except RuntimeError:
+            try:
+                await _mcp_client.__aexit__(None, None, None)
+            except Exception:
+                pass
+            _mcp_client = None
+            _mcp_client_entry = None
 
     # Close the old client (if any)
     if _mcp_client is not None:
@@ -102,22 +115,30 @@ async def mcp_list_tools(mcp_entry: str = "agent_et_mcp.py") -> List[Dict[str, A
 
     Returns: a list compatible with Qwen tool format.
     """
-    # Try client.list_tools()
-    client = await get_mcp_client(mcp_entry)
-    if hasattr(client, "list_tools"):
-        tools = await client.list_tools()
-        # Map MCP tool descriptions to OpenAI/Qwen function tool format
+    def _to_qwen_tools(tools: List[Any]) -> List[Dict[str, Any]]:
         qwen_tools: List[Dict[str, Any]] = []
         for t in tools:
             # Support dict or object form
             if isinstance(t, dict):
                 name = t.get("name") or t.get("tool_name")
                 desc = t.get("description") or t.get("desc") or ""
-                params = t.get("parameters") or t.get("schema") or t.get("args")
+                params = (
+                    t.get("parameters")
+                    or t.get("schema")
+                    or t.get("input_schema")
+                    or t.get("inputSchema")
+                    or t.get("args")
+                )
             else:
                 name = getattr(t, "name", None) or getattr(t, "tool_name", None)
                 desc = getattr(t, "description", None) or getattr(t, "desc", None) or ""
-                params = getattr(t, "parameters", None) or getattr(t, "schema", None) or getattr(t, "args", None)
+                params = (
+                    getattr(t, "parameters", None)
+                    or getattr(t, "schema", None)
+                    or getattr(t, "input_schema", None)
+                    or getattr(t, "inputSchema", None)
+                    or getattr(t, "args", None)
+                )
 
             if not name:
                 continue
@@ -157,15 +178,150 @@ async def mcp_list_tools(mcp_entry: str = "agent_et_mcp.py") -> List[Dict[str, A
 
             func["parameters"] = parameters_schema
             qwen_tools.append({"type": "function", "function": func})
+        return qwen_tools
 
-        if qwen_tools:
-            return qwen_tools
+    # Try client.list_tools() (reused client)
+    try:
+        client = await get_mcp_client(mcp_entry)
+        if hasattr(client, "list_tools"):
+            tools = await client.list_tools()
+            qwen_tools = _to_qwen_tools(tools)
+            if qwen_tools:
+                return qwen_tools
+    except Exception:
+        pass
 
-        raise RuntimeError("No tools returned from MCP list_tools()")
+    # Try a short-lived client context if the cached client is disconnected
+    try:
+        async with Client(_resolve_mcp_entry(mcp_entry)) as transient_client:
+            tools = await transient_client.list_tools()
+            qwen_tools = _to_qwen_tools(tools)
+            if qwen_tools:
+                return qwen_tools
+    except Exception:
+        pass
+
+    # Fallback: load tools from local MCP module definitions
+    local_tools = _load_local_tools_from_entry(mcp_entry)
+    if local_tools:
+        return local_tools
+
+    raise RuntimeError("No tools available from MCP or local definitions")
+
+
+def _load_local_tools_from_entry(mcp_entry: str) -> List[Dict[str, Any]]:
+    """
+    Load tool definitions directly from the MCP entry module without starting a client.
+    This is a safe fallback to avoid hard-coded QWEN_TOOLS.
+    """
+    entry_path = _resolve_mcp_entry(mcp_entry)
+    module_name = f"_mcp_tools_{Path(entry_path).stem}"
+
+    try:
+        spec = importlib.util.spec_from_file_location(module_name, entry_path)
+        if spec is None or spec.loader is None:
+            return []
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[module_name] = module
+        spec.loader.exec_module(module)
+    except Exception:
+        return []
+
+    mcp_obj = getattr(module, "mcp", None)
+    candidates: List[Any] = []
+
+    if mcp_obj is not None:
+        for attr_name in ("tools", "_tools", "tool_registry", "tool_specs"):
+            attr = getattr(mcp_obj, attr_name, None)
+            if isinstance(attr, dict):
+                candidates.extend(list(attr.values()))
+            elif isinstance(attr, list):
+                candidates.extend(attr)
+
+    # If we still have nothing, try to infer from known functions
+    if not candidates:
+        for fn_name in ("detect_single_pair", "detect_batch_folders"):
+            fn = getattr(module, fn_name, None)
+            if callable(fn):
+                candidates.append(fn)
+
+    return _build_qwen_tools_from_candidates(candidates)
+
+
+def _build_qwen_tools_from_candidates(candidates: List[Any]) -> List[Dict[str, Any]]:
+    tools: List[Dict[str, Any]] = []
+    for item in candidates:
+        if isinstance(item, dict):
+            name = item.get("name") or item.get("tool_name")
+            desc = item.get("description") or item.get("desc") or ""
+            params = (
+                item.get("parameters")
+                or item.get("schema")
+                or item.get("input_schema")
+                or item.get("inputSchema")
+                or item.get("args")
+            )
+        else:
+            name = getattr(item, "name", None) or getattr(item, "tool_name", None) or getattr(item, "__name__", None)
+            desc = (
+                getattr(item, "description", None)
+                or getattr(item, "desc", None)
+                or getattr(item, "__doc__", None)
+                or ""
+            )
+            params = (
+                getattr(item, "parameters", None)
+                or getattr(item, "schema", None)
+                or getattr(item, "input_schema", None)
+                or getattr(item, "inputSchema", None)
+                or getattr(item, "args", None)
+            )
+
+        if not name:
+            continue
+
+        # If params are missing but we have a callable, use annotations to build a minimal schema
+        if params is None and callable(item):
+            try:
+                sig = inspect.signature(item)
+                props: Dict[str, Any] = {}
+                required: List[str] = []
+                for param in sig.parameters.values():
+                    if param.name in ("self", "cls"):
+                        continue
+                    props[param.name] = {"type": "string", "description": ""}
+                    if param.default is inspect.Parameter.empty:
+                        required.append(param.name)
+                params = {"type": "object", "properties": props}
+                if required:
+                    params["required"] = required
+            except Exception:
+                params = {"type": "object", "properties": {}}
+
+        # Normalize into Qwen/OpenAI tool format
+        func: Dict[str, Any] = {"name": name, "description": desc or ""}
+        if isinstance(params, dict):
+            func["parameters"] = params
+        else:
+            func["parameters"] = {"type": "object", "properties": {}}
+
+        tools.append({"type": "function", "function": func})
+
+    # De-duplicate by name, keeping the first occurrence
+    seen = set()
+    unique_tools: List[Dict[str, Any]] = []
+    for t in tools:
+        t_name = t.get("function", {}).get("name")
+        if not t_name or t_name in seen:
+            continue
+        seen.add(t_name)
+        unique_tools.append(t)
+
+    return unique_tools
 
 
 # ============================================================
-# MCP tool wrappers (reusing the existing DetectionPipeline)
+# MCP tool wrappers
 # ============================================================
 
 
@@ -316,14 +472,8 @@ async def qwen_explain_detection(
         temperature=temperature,
     )
 
-# ============================================================
-# Example: let Qwen decide when/how to call MCP tools (agent behavior)
-# ============================================================
 
 def _parse_merged_key(merged_key: str) -> tuple[str | None, str | None]:
-    """
-    Parse merged_key, e.g. "25-11-08-C113" -> ("25-11-08", "C113")
-    """
     if not isinstance(merged_key, str):
         return None, None
     m = re.match(r"(\d{2}-\d{2}-\d{2})-(C\d{3}|B\d{3}|P\d{3})", merged_key)
@@ -430,10 +580,6 @@ def _build_detection_summary_from_tool_result(tool_result: Dict[str, Any]) -> Di
 
 
 async def _call_mcp_tool(tool_name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
-    """
-    Used by the agent example: call an MCP tool by name and arguments.
-    This uses the FastMCP client's generic call method.
-    """
     # First try the reused global client (performance; avoid frequent restarts)
     try:
         client = await get_mcp_client("agent_et_mcp.py")
@@ -617,7 +763,7 @@ async def run_qwen_agent(
     if not api_key:
         raise ValueError("api_key is required")
 
-    # Auto-generate user_query (if not provided)
+    # Auto-generate user_query
     if not user_query:
         if b_image_path and m_image_path:
             user_query = f"""
@@ -665,11 +811,8 @@ Please:
         {"role": "user", "content": user_query},
     ]
 
-    # Try to fetch tools dynamically from MCP, prefer the running MCP
-    try:
-        tools = await mcp_list_tools("agent_et_mcp.py")
-    except Exception:
-        tools = QWEN_TOOLS
+    # Try to fetch tools dynamically from MCP, with local fallback inside mcp_list_tools
+    tools = await mcp_list_tools("agent_et_mcp.py")
 
     # Step 1: let Qwen decide which tool to call (dynamic tools list)
     first = client.chat.completions.create(
