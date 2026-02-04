@@ -1,13 +1,6 @@
 """
-Agent example using Qwen3-8B + FastMCP + your MCP tools (agent_et_mcp.py).
+Agent construction using Qwen3-8B + FastMCP +  MCP tools (agent_et_mcp.py).
 
-Design:
-1. Use the existing MCP tools to compute probabilities (detect_single_pair / detect_batch_folders).
-2. Qwen can either only read the JSON result and explain it (explain mode),
-    or decide which MCP tools to call via function-calling (agent mode).
-
-This file provides two capabilities:
-- qwen_explain_detection_sync: only "read JSON + explain", for direct Streamlit calls.
 - run_qwen_agent: let Qwen decide which MCP tool to call and then summarize the result (true agent behavior).
 """
 
@@ -49,19 +42,29 @@ def get_qwen_client(api_key: str, base_url: str = DEFAULT_QWEN_BASE_URL) -> Open
 _mcp_client: Optional[Client] = None
 _mcp_client_entry: Optional[str] = None
 
+
+def _resolve_mcp_entry(mcp_entry: str) -> str:
+    """Resolve MCP entry path to an absolute path based on this file's directory."""
+    entry_path = Path(mcp_entry)
+    if entry_path.is_absolute():
+        return str(entry_path)
+    base_dir = Path(__file__).resolve().parent
+    return str((base_dir / entry_path).resolve())
+
 # Track detect_output_dir from previous tool calls (for cleanup)
-_last_detect_output_dirs: List[str] = []
+_laust_detect_outpt_dirs: List[str] = []
 
 
 async def get_mcp_client(mcp_entry: str = "agent_et_mcp.py") -> Client:
     """
-    Get a reusable FastMCP client instance (singleton).
+    Get a reusable FastMCP client instance.
 
     - If an existing client with the same entry exists, return it.
     - Otherwise close the old client and create a new one.
     """
     global _mcp_client, _mcp_client_entry
-    if _mcp_client is not None and _mcp_client_entry == mcp_entry:
+    resolved_entry = _resolve_mcp_entry(mcp_entry)
+    if _mcp_client is not None and _mcp_client_entry == resolved_entry:
         return _mcp_client
 
     # Close the old client (if any)
@@ -74,14 +77,14 @@ async def get_mcp_client(mcp_entry: str = "agent_et_mcp.py") -> Client:
         _mcp_client_entry = None
 
     # Create and enter
-    _mcp_client = Client(mcp_entry)
+    _mcp_client = Client(resolved_entry)
     await _mcp_client.__aenter__()
-    _mcp_client_entry = mcp_entry
+    _mcp_client_entry = resolved_entry
     return _mcp_client
 
 
 async def close_mcp_client() -> None:
-    """Explicitly close the global MCP client (optional)."""
+    """Explicitly close the global MCP client."""
     global _mcp_client, _mcp_client_entry
     if _mcp_client is not None:
         try:
@@ -97,76 +100,70 @@ async def mcp_list_tools(mcp_entry: str = "agent_et_mcp.py") -> List[Dict[str, A
     Try to obtain tool definitions from the running MCP client (preferred); if unavailable,
     fall back to parsing the mcp_entry file.
 
-    Returns: a list compatible with Qwen tool format (compatible with QWEN_TOOLS).
+    Returns: a list compatible with Qwen tool format.
     """
-    # 1) Try client.list_tools() (if FastMCP supports it)
-    try:
-        client = await get_mcp_client(mcp_entry)
-        if hasattr(client, "list_tools"):
-            tools = await client.list_tools()
-            # Map MCP tool descriptions to OpenAI/Qwen function tool format
-            qwen_tools: List[Dict[str, Any]] = []
-            try:
-                for t in tools:
-                    # Support dict or object form
-                    if isinstance(t, dict):
-                        name = t.get("name") or t.get("tool_name")
-                        desc = t.get("description") or t.get("desc") or ""
-                        params = t.get("parameters") or t.get("schema") or t.get("args")
-                    else:
-                        name = getattr(t, "name", None) or getattr(t, "tool_name", None)
-                        desc = getattr(t, "description", None) or getattr(t, "desc", None) or ""
-                        params = getattr(t, "parameters", None) or getattr(t, "schema", None) or getattr(t, "args", None)
+    # Try client.list_tools()
+    client = await get_mcp_client(mcp_entry)
+    if hasattr(client, "list_tools"):
+        tools = await client.list_tools()
+        # Map MCP tool descriptions to OpenAI/Qwen function tool format
+        qwen_tools: List[Dict[str, Any]] = []
+        for t in tools:
+            # Support dict or object form
+            if isinstance(t, dict):
+                name = t.get("name") or t.get("tool_name")
+                desc = t.get("description") or t.get("desc") or ""
+                params = t.get("parameters") or t.get("schema") or t.get("args")
+            else:
+                name = getattr(t, "name", None) or getattr(t, "tool_name", None)
+                desc = getattr(t, "description", None) or getattr(t, "desc", None) or ""
+                params = getattr(t, "parameters", None) or getattr(t, "schema", None) or getattr(t, "args", None)
 
-                    if not name:
+            if not name:
+                continue
+
+            func: Dict[str, Any] = {"name": name, "description": desc or ""}
+
+            # Build parameters JSON schema (minimal compatibility)
+            parameters_schema: Dict[str, Any]
+            if isinstance(params, dict):
+                # If it's already JSON schema, use it directly
+                parameters_schema = params
+            elif isinstance(params, list):
+                props: Dict[str, Any] = {}
+                required: List[str] = []
+                for p in params:
+                    if isinstance(p, dict):
+                        pname = p.get("name")
+                        ptype = p.get("type", "string")
+                        pdesc = p.get("description", "")
+                        preq = bool(p.get("required", False))
+                    else:
+                        pname = getattr(p, "name", None)
+                        ptype = getattr(p, "type", "string")
+                        pdesc = getattr(p, "description", "")
+                        preq = bool(getattr(p, "required", False))
+                    if not pname:
                         continue
+                    props[pname] = {"type": ptype, "description": pdesc}
+                    if preq:
+                        required.append(pname)
+                parameters_schema = {"type": "object", "properties": props}
+                if required:
+                    parameters_schema["required"] = required
+            else:
+                # If parameters cannot be parsed, fall back to empty schema
+                parameters_schema = {"type": "object", "properties": {}}
 
-                    func: Dict[str, Any] = {"name": name, "description": desc or ""}
+            func["parameters"] = parameters_schema
+            qwen_tools.append({"type": "function", "function": func})
 
-                    # Build parameters JSON schema (minimal compatibility)
-                    parameters_schema: Dict[str, Any]
-                    if isinstance(params, dict):
-                        # If it's already JSON schema, use it directly
-                        parameters_schema = params
-                    elif isinstance(params, list):
-                        props: Dict[str, Any] = {}
-                        required: List[str] = []
-                        for p in params:
-                            if isinstance(p, dict):
-                                pname = p.get("name")
-                                ptype = p.get("type", "string")
-                                pdesc = p.get("description", "")
-                                preq = bool(p.get("required", False))
-                            else:
-                                pname = getattr(p, "name", None)
-                                ptype = getattr(p, "type", "string")
-                                pdesc = getattr(p, "description", "")
-                                preq = bool(getattr(p, "required", False))
-                            if not pname:
-                                continue
-                            props[pname] = {"type": ptype, "description": pdesc}
-                            if preq:
-                                required.append(pname)
-                        parameters_schema = {"type": "object", "properties": props}
-                        if required:
-                            parameters_schema["required"] = required
-                    else:
-                        # If parameters cannot be parsed, fall back to empty schema
-                        parameters_schema = {"type": "object", "properties": {}}
+        if qwen_tools:
+            return qwen_tools
 
-                    func["parameters"] = parameters_schema
-                    qwen_tools.append({"type": "function", "function": func})
+        raise RuntimeError("No tools returned from MCP list_tools()")
 
-                if qwen_tools:
-                    return qwen_tools
-            except Exception:
-                # If mapping fails, fall back to file parsing
-                pass
-    except Exception:
-        # Ignore and fall back to file parsing
-        pass
-        
-    return QWEN_TOOLS
+
 
 
 # ============================================================
@@ -463,7 +460,7 @@ async def _call_mcp_tool(tool_name: str, arguments: Dict[str, Any]) -> Dict[str,
         client = None
 
     # If the reused client is unavailable, use a short-lived async context client
-    async with Client("agent_et_mcp.py") as transient_client:
+    async with Client(_resolve_mcp_entry("agent_et_mcp.py")) as transient_client:
         result = await transient_client.call_tool(tool_name, arguments)
         normalized = _normalize_mcp_result(result)
     # Track detect_output_dir for cleanup
@@ -811,5 +808,4 @@ Please:
         result_obj["debug"] = debug
 
     return result_obj
-
 
