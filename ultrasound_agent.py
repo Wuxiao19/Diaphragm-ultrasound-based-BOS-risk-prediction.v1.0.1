@@ -110,8 +110,7 @@ async def close_mcp_client() -> None:
 
 async def mcp_list_tools(mcp_entry: str = "agent_et_mcp.py") -> List[Dict[str, Any]]:
     """
-    Try to obtain tool definitions from the running MCP client (preferred); if unavailable,
-    fall back to parsing the mcp_entry file.
+    Obtain tool definitions from the MCP server and reconnect if the client is disconnected.
 
     Returns: a list compatible with Qwen tool format.
     """
@@ -148,7 +147,6 @@ async def mcp_list_tools(mcp_entry: str = "agent_et_mcp.py") -> List[Dict[str, A
             # Build parameters JSON schema (minimal compatibility)
             parameters_schema: Dict[str, Any]
             if isinstance(params, dict):
-                # If it's already JSON schema, use it directly
                 parameters_schema = params
             elif isinstance(params, list):
                 props: Dict[str, Any] = {}
@@ -173,40 +171,34 @@ async def mcp_list_tools(mcp_entry: str = "agent_et_mcp.py") -> List[Dict[str, A
                 if required:
                     parameters_schema["required"] = required
             else:
-                # If parameters cannot be parsed, fall back to empty schema
                 parameters_schema = {"type": "object", "properties": {}}
 
             func["parameters"] = parameters_schema
             qwen_tools.append({"type": "function", "function": func})
         return qwen_tools
 
-    # Try client.list_tools() (reused client)
-    try:
-        client = await get_mcp_client(mcp_entry)
-        if hasattr(client, "list_tools"):
-            tools = await client.list_tools()
-            qwen_tools = _to_qwen_tools(tools)
-            if qwen_tools:
-                return qwen_tools
-    except Exception:
-        pass
+    # Attempt using cached client first, reconnect on failure
+    for _ in range(2):
+        try:
+            client = await get_mcp_client(mcp_entry)
+            if hasattr(client, "list_tools"):
+                tools = await client.list_tools()
+                qwen_tools = _to_qwen_tools(tools)
+                if qwen_tools:
+                    return qwen_tools
+        except RuntimeError:
+            await close_mcp_client()
+        except Exception:
+            await close_mcp_client()
 
-    # Try a short-lived client context if the cached client is disconnected
-    try:
-        async with Client(_resolve_mcp_entry(mcp_entry)) as transient_client:
-            tools = await transient_client.list_tools()
-            qwen_tools = _to_qwen_tools(tools)
-            if qwen_tools:
-                return qwen_tools
-    except Exception:
-        pass
+    # Last resort: short-lived MCP client context (still uses MCP server)
+    async with Client(_resolve_mcp_entry(mcp_entry)) as transient_client:
+        tools = await transient_client.list_tools()
+        qwen_tools = _to_qwen_tools(tools)
+        if qwen_tools:
+            return qwen_tools
 
-    # Fallback: load tools from local MCP module definitions
-    local_tools = _load_local_tools_from_entry(mcp_entry)
-    if local_tools:
-        return local_tools
-
-    raise RuntimeError("No tools available from MCP or local definitions")
+    raise RuntimeError("No tools returned from MCP list_tools()")
 
 
 def _load_local_tools_from_entry(mcp_entry: str) -> List[Dict[str, Any]]:
