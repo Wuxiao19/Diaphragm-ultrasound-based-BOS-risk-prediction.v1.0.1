@@ -165,28 +165,7 @@ async def mcp_list_tools(mcp_entry: str = "agent_et_mcp.py") -> List[Dict[str, A
     except Exception:
         # Ignore and fall back to file parsing
         pass
-
-    # 2) Fallback: parse local agent_et_mcp.py to find @mcp.tool decorators
-    try:
-        code = Path(mcp_entry).read_text(encoding="utf-8")
-        # Simple regex: capture name and description (if any)
-        pattern = r"@mcp.tool\s*\(\s*name\s*=\s*[\'\"](?P<name>[\w_\-]+)[\'\"](?:,\s*description\s*=\s*[\'\"](?P<desc>.*?)[\'\"])?"
-        import re as _re
-
-        qwen_tools = []
-        for m in _re.finditer(pattern, code, _re.S):
-            name = m.group("name")
-            desc = m.group("desc") or ""
-            if name == "detect_single_pair":
-                qwen_tools.append(QWEN_TOOLS[0])
-            elif name == "detect_batch_folders":
-                qwen_tools.append(QWEN_TOOLS[1])
-        if qwen_tools:
-            return qwen_tools
-    except Exception:
-        pass
-
-    # 3) Final fallback: return built-in QWEN_TOOLS
+        
     return QWEN_TOOLS
 
 
@@ -345,53 +324,6 @@ async def qwen_explain_detection(
 # ============================================================
 # Example: let Qwen decide when/how to call MCP tools (agent behavior)
 # ============================================================
-
-
-QWEN_TOOLS = [
-    {
-        "type": "function",
-        "function": {
-            "name": "detect_single_pair",
-            "description": "Automatically extract features and predict risk for a single patient's B-mode and M-mode image pair.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "b_image_path": {
-                        "type": "string",
-                        "description": "Local path to the B-mode ultrasound image (absolute or relative).",
-                    },
-                    "m_image_path": {
-                        "type": "string",
-                        "description": "Local path to the M-mode ultrasound image (absolute or relative).",
-                    },
-                },
-                "required": ["b_image_path", "m_image_path"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "detect_batch_folders",
-            "description": "Run batch detection on B/M image folders for multiple patients.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "b_folder_path": {
-                        "type": "string",
-                        "description": "Folder path for B-mode images.",
-                    },
-                    "m_folder_path": {
-                        "type": "string",
-                        "description": "Folder path for M-mode images.",
-                    },
-                },
-                "required": ["b_folder_path", "m_folder_path"],
-            },
-        },
-    },
-]
-
 
 def _parse_merged_key(merged_key: str) -> tuple[str | None, str | None]:
     """
@@ -879,4 +811,5 @@ Please:
         result_obj["debug"] = debug
 
     return result_obj
+
 
