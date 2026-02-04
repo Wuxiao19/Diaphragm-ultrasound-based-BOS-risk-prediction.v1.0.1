@@ -1,13 +1,10 @@
 """
 FastMCP tool server wrapping `DetectionPipeline` for diaphragm ultrasound analysis.
 
-Provides two tools (for the agent):
+two tools (for the agent):
 1. `detect_single_pair`: input one B-mode and one M-mode image path, return the risk probability.
 2. `detect_batch_folders`: input a B-mode folder and an M-mode folder, batch infer risk probabilities.
 
-Notes:
-- Both tools reuse the logic and model weights from `integrated_detection_gui_ET.DetectionPipeline`.
-- Filenames must follow the pipeline naming rule and include `YY-MM-DD-<ID>`, e.g. `24-05-01-C001_xxx.png`.
 """
 
 from __future__ import annotations
@@ -32,7 +29,7 @@ mcp = FastMCP("Diaphragm-Ultrasound-ET-Detection")
 
 
 # ============================================================
-# Global pipeline management (avoid reloading models)
+# Global pipeline management 
 # ============================================================
 
 _pipeline: Optional[DetectionPipeline] = None
@@ -42,8 +39,6 @@ def _get_pipeline() -> DetectionPipeline:
     """
     Get a DetectionPipeline instance with models loaded.
 
-    - Use lazy loading + a global singleton to avoid reloading large models.
-    - Disable GUI callback and log only to stdout.
     """
     global _pipeline
     if _pipeline is None:
@@ -106,16 +101,13 @@ class BatchDetectionResult(BaseModel):
 
 
 """
-Internal implementation: single B/M image pair detection (shared by MCP tool and local testing).
+Internal implementation: single B/M image pair detection.
 """
 async def detect_single_pair_impl(
     b_image_path: str,
     m_image_path: str,
 ) -> SingleDetectionResult:
-    """
-    Path conversion: if the input path doesn't exist, try resolving it relative to
-    the current working directory. This helps with cross-platform paths (Windows/Linux).
-    """
+
     b_path = Path(b_image_path)
     m_path = Path(m_image_path)
     
@@ -125,7 +117,7 @@ async def detect_single_pair_impl(
         filename = b_path.name
         possible_paths = []
         
-        # 1. Original path (already checked, missing)
+        # 1. Original path
         possible_paths.append(b_path)
         
         # 2. If relative, try current working directory
@@ -185,7 +177,7 @@ async def detect_single_pair_impl(
         filename = m_path.name
         possible_paths = []
         
-        # 1. Original path (already checked, missing)
+        # 1. Original path
         possible_paths.append(m_path)
         
         # 2. If relative, try current working directory
@@ -299,10 +291,7 @@ async def detect_batch_folders_impl(
     b_folder_path: str,
     m_folder_path: str,
 ) -> BatchDetectionResult:
-    """
-    Path conversion: if the input path doesn't exist, try resolving it relative to
-    the current working directory. This helps with cross-platform paths (Windows/Linux).
-    """
+
     b_dir = Path(b_folder_path)
     m_dir = Path(m_folder_path)
     
@@ -311,7 +300,7 @@ async def detect_batch_folders_impl(
         current_dir = Path.cwd()
         possible_paths = []
         
-        # 1. Original path (already checked, missing)
+        # 1. Original path
         possible_paths.append(b_dir)
         
         # 2. If relative, try current working directory
