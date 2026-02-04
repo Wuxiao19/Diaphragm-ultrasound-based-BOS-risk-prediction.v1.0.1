@@ -52,7 +52,7 @@ def _resolve_mcp_entry(mcp_entry: str) -> str:
     return str((base_dir / entry_path).resolve())
 
 # Track detect_output_dir from previous tool calls (for cleanup)
-_laust_detect_outpt_dirs: List[str] = []
+_last_detect_outpt_dirs: List[str] = []
 
 
 async def get_mcp_client(mcp_entry: str = "agent_et_mcp.py") -> Client:
@@ -162,8 +162,6 @@ async def mcp_list_tools(mcp_entry: str = "agent_et_mcp.py") -> List[Dict[str, A
             return qwen_tools
 
         raise RuntimeError("No tools returned from MCP list_tools()")
-
-
 
 
 # ============================================================
