@@ -89,9 +89,6 @@ class BatchDetectionResult(BaseModel):
     """Batch detection result."""
 
     total_samples: int = Field(description="Number of successfully predicted samples (rows)")
-    average_probability: float = Field(
-        description="Average risk probability across samples (simple mean)"
-    )
     items: List[BatchDetectionItem] = Field(
         description="Detailed prediction results for each sample"
     )
@@ -421,17 +418,13 @@ async def detect_batch_folders_impl(
         # Return empty result if no matches (missing_modality_samples.csv is still saved)
         return BatchDetectionResult(
             total_samples=0,
-            average_probability=0.0,
             items=[],
             detect_output_dir=str(output_dir),
         )
 
     items: List[BatchDetectionItem] = []
-    probs: List[float] = []
-
     for _, row in results_df.iterrows():
         prob = float(row.get("risk_probability", 0.0))
-        probs.append(prob)
         items.append(
             BatchDetectionItem(
                 b_image=str(row.get("b_filename", "")),
@@ -443,11 +436,8 @@ async def detect_batch_folders_impl(
             )
         )
 
-    avg_prob = float(np.mean(probs)) if probs else 0.0
-
     return BatchDetectionResult(
         total_samples=len(items),
-        average_probability=avg_prob,
         items=items,
         detect_output_dir=str(output_dir),
     )
