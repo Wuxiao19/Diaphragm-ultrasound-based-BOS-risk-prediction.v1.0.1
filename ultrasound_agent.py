@@ -373,7 +373,7 @@ When there is no complete B and M pair, the tools cannot run. For missing modali
 
 When you receive the JSON detection result, typical contents include:
 - For a single patient: merged_key, risk_probability, prediction, prediction_label, etc.
-- For multiple patients: a list of those fields, total samples, average risk, etc.
+- For multiple patients: a list of those fields and total samples.
 
 The merged_key format:
 - Looks like "YY-MM-DD-C123", "YY-MM-DD-B123", or "YY-MM-DD-P123".
@@ -386,13 +386,24 @@ Your tasks:
 1. Explain the results clearly and professionally in English, while keeping them easy to understand.
 2. Categorize risk by risk_probability (e.g., very low, low, medium, high, very high) and provide reasonable threshold descriptions.
 3. For batch results:
-     - Highlight high-risk patients (e.g., risk_probability > 0.7) with ID, date, and probability.
-     - Pay special attention to repeat exams for the same patient ID and analyze risk trends across dates.
+    - Highlight high-risk patients (risk_probability > 0.6) with ID, date, and probability.
+    - Pay special attention to repeat exams for the same patient ID and analyze risk trends across dates.
 4. If missing modality cases exist (only B or only M), note them explicitly:
-     - Specify which modality is missing (B or M).
-     - This project does not provide single-modality prediction, so no prediction is available for those cases.
+    - Specify which modality is missing (B or M).
+    - This project does not provide single-modality prediction, so no prediction is available for those cases.
 5. Provide at least 1–3 clinical or management suggestions (e.g., further exams, rechecks, follow-ups, rehab training, or clinical evaluation).
 6. Clearly remind that this is a machine learning result based on images and cannot replace a doctor's final diagnosis.
+7. Structure the output in this order:
+    - Sample details summary (brief)
+    - High-risk patient analysis
+    - High-risk patient suggestions
+    - Recheck patient analysis (if any)
+    - Recheck patient suggestions (if any)
+    - Missing modality analysis (if any)
+    - Missing modality suggestions (if any)
+    - Risk definition thresholds
+    - Missing modality samples summary
+    - Disclaimer (model output cannot replace doctor's diagnosis)
 """
 
 
@@ -552,13 +563,9 @@ def _build_detection_summary_from_tool_result(tool_result: Dict[str, Any]) -> Di
                 missing_summary = None
 
     # 4) Overall summary
-    all_probs = [it["risk_probability"] for it in items_enriched]
-    avg_prob = float(sum(all_probs) / len(all_probs)) if all_probs else 0.0
-
     summary: Dict[str, Any] = {
         "mode": mode,
         "total_samples": len(items_enriched),
-        "average_probability": avg_prob,
         "items": items_enriched,
         "recheck_patients": recheck_patients,
     }
@@ -782,7 +789,7 @@ Please:
 1. Do not provide any conclusions before calling a tool; you must actually call the MCP tool before responding.
 2. Choose and call the correct batch detection tool (detect_batch_folders).
 3. After getting the JSON result, summarize the risk distribution across patients.
-4. Identify high-risk patients (e.g., risk_probability > 0.7) and list their IDs and probabilities.
+4. Identify high-risk patients (risk_probability > 0.6) and list their IDs and probabilities.
 5. Provide 1–3 clinical or management suggestions.
 6. Remind that this is a model prediction and cannot replace a doctor's diagnosis.
 """
