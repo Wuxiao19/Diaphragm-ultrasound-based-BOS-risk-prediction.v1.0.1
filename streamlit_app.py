@@ -170,20 +170,42 @@ def _render_agent_result(ar: dict) -> None:
                     detection_summary = None
 
     if detection_summary:
-        cols = st.columns([1, 1, 1])
+        cols = st.columns([1, 1])
         cols[0].metric("Samples", detection_summary.get("total_samples", 0))
-        cols[1].metric("Average risk probability", f"{detection_summary.get('average_probability', 0.0):.3f}")
-        cols[2].metric("Recheck patients", len(detection_summary.get("recheck_patients", [])))
+        cols[1].metric("Recheck patients", len(detection_summary.get("recheck_patients", [])))
 
         st.markdown("**Sample details (table)**")
         items_df = pd.DataFrame(detection_summary.get("items", []))
         if not items_df.empty:
-            st.dataframe(items_df)
+            display_df = items_df[["patient_id", "date", "risk_probability"]].copy()
+            display_df = display_df.rename(
+                columns={
+                    "patient_id": "Patient_id",
+                    "date": "date",
+                    "risk_probability": "risk_probability",
+                }
+            )
 
-        high_risk = items_df[items_df["risk_probability"] > 0.7] if not items_df.empty else pd.DataFrame()
+            def _risk_color(val):
+                try:
+                    v = float(val)
+                except Exception:
+                    return ""
+                if v > 0.6:
+                    return "color: #c62828; font-weight: 600;"  # red
+                if v < 0.3:
+                    return "color: #2e7d32; font-weight: 600;"  # green
+                return "color: #ef6c00; font-weight: 600;"  # orange
+
+            styled = display_df.style.format({"risk_probability": "{:.3f}"}).applymap(
+                _risk_color, subset=["risk_probability"]
+            )
+            st.dataframe(styled, use_container_width=True)
+
+        high_risk = items_df[items_df["risk_probability"] > 0.6] if not items_df.empty else pd.DataFrame()
         if not high_risk.empty:
-            st.warning("High-risk patients detected (risk_probability > 0.7):")
-            st.table(high_risk[["merged_key", "patient_id", "date", "risk_probability"]])
+            st.warning("High-risk patients detected (risk_probability > 0.6):")
+            st.table(high_risk[["patient_id", "date", "risk_probability"]])
 
         if detection_summary.get("recheck_patients"):
             with st.expander("Recheck patients (same patient across dates)", expanded=False):
@@ -458,7 +480,7 @@ if st.session_state.get("agent_result"):
     try:
         _render_agent_result(st.session_state.get("agent_result"))
     except Exception:
-    # Rendering failures should not block the main flow
+        # Rendering failures should not block the main flow
         pass
 
 
