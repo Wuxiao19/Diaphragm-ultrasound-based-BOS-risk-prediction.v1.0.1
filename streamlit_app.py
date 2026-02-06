@@ -170,6 +170,32 @@ def _render_agent_result(ar: dict) -> None:
                     detection_summary = None
 
     if detection_summary:
+        def _find_image_path(filename: str) -> str | None:
+            if not filename:
+                return None
+            # 1) Search under uploaded_inputs
+            try:
+                upload_root = ensure_upload_dir()
+                for p in upload_root.rglob(filename):
+                    if p.is_file():
+                        return str(p)
+            except Exception:
+                pass
+
+            # 2) Search under detect_output_dir (if available)
+            try:
+                detect_dir = st.session_state.get("detect_output_dir")
+                if isinstance(detect_dir, str) and detect_dir:
+                    detect_path = Path(detect_dir)
+                    if detect_path.exists():
+                        for p in detect_path.rglob(filename):
+                            if p.is_file():
+                                return str(p)
+            except Exception:
+                pass
+
+            return None
+
         cols = st.columns([1, 1])
         cols[0].metric("Samples", detection_summary.get("total_samples", 0))
         cols[1].metric("Recheck patients", len(detection_summary.get("recheck_patients", [])))
@@ -207,6 +233,30 @@ def _render_agent_result(ar: dict) -> None:
             st.warning("High-risk patients detected (risk_probability > 0.6):")
             st.table(high_risk[["patient_id", "date", "risk_probability"]])
 
+            st.markdown("**High-risk patient images (B/M mode)**")
+            for _, row in high_risk.iterrows():
+                b_name = row.get("b_image") or row.get("b_filename") or ""
+                m_name = row.get("m_image") or row.get("m_filename") or ""
+                b_path = _find_image_path(str(b_name)) if b_name else None
+                m_path = _find_image_path(str(m_name)) if m_name else None
+
+                st.markdown(
+                    f"- Patient {row.get('patient_id')} | {row.get('date')} | risk={float(row.get('risk_probability', 0.0)):.3f}"
+                )
+                img_cols = st.columns(2)
+                with img_cols[0]:
+                    st.caption(f"B-mode: {b_name}" if b_name else "B-mode: (not available)")
+                    if b_path:
+                        st.image(b_path, use_container_width=True)
+                    else:
+                        st.info("B-mode image not found in uploaded inputs.")
+                with img_cols[1]:
+                    st.caption(f"M-mode: {m_name}" if m_name else "M-mode: (not available)")
+                    if m_path:
+                        st.image(m_path, use_container_width=True)
+                    else:
+                        st.info("M-mode image not found in uploaded inputs.")
+
         if detection_summary.get("recheck_patients"):
             with st.expander("Recheck patients (same patient across dates)", expanded=False):
                 for rp in detection_summary.get("recheck_patients", []):
@@ -215,21 +265,21 @@ def _render_agent_result(ar: dict) -> None:
                     st.dataframe(pd.DataFrame(rp.get("visits", [])))
 
         if detection_summary.get("missing_modality_summary"):
-            ms = detection_summary["missing_modality_summary"]
-            total_missing = ms.get("total_missing_samples", 0)
-            missing_by_type = ms.get("missing_by_type") or {}
+            with st.expander("⚠️ Missing modality samples", expanded=False):
+                ms = detection_summary["missing_modality_summary"]
+                total_missing = ms.get("total_missing_samples", 0)
+                missing_by_type = ms.get("missing_by_type") or {}
 
-            st.markdown("### ⚠️ Missing modality samples")
-            st.metric("Missing samples", total_missing)
-            if missing_by_type:
-                summary_df = pd.DataFrame(
-                    [
-                        {"Missing type": k, "Count": v}
-                        for k, v in missing_by_type.items()
-                    ]
-                )
-                st.markdown("**Missing type summary**")
-                st.table(summary_df)
+                st.metric("Missing samples", total_missing)
+                if missing_by_type:
+                    summary_df = pd.DataFrame(
+                        [
+                            {"Missing type": k, "Count": v}
+                            for k, v in missing_by_type.items()
+                        ]
+                    )
+                    st.markdown("**Missing type summary**")
+                    st.table(summary_df)
 
     final_text = ar.get("final_response", "")
     if final_text:
