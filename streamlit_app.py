@@ -233,29 +233,29 @@ def _render_agent_result(ar: dict) -> None:
             st.warning("High-risk patients detected (risk_probability > 0.6):")
             st.table(high_risk[["patient_id", "date", "risk_probability"]])
 
-            st.markdown("**High-risk patient images (B/M mode)**")
-            for _, row in high_risk.iterrows():
-                b_name = row.get("b_image") or row.get("b_filename") or ""
-                m_name = row.get("m_image") or row.get("m_filename") or ""
-                b_path = _find_image_path(str(b_name)) if b_name else None
-                m_path = _find_image_path(str(m_name)) if m_name else None
+            with st.expander("High-risk patient images (B/M mode)", expanded=False):
+                for _, row in high_risk.iterrows():
+                    b_name = row.get("b_image") or row.get("b_filename") or ""
+                    m_name = row.get("m_image") or row.get("m_filename") or ""
+                    b_path = _find_image_path(str(b_name)) if b_name else None
+                    m_path = _find_image_path(str(m_name)) if m_name else None
 
-                st.markdown(
-                    f"- Patient {row.get('patient_id')} | {row.get('date')} | risk={float(row.get('risk_probability', 0.0)):.3f}"
-                )
-                img_cols = st.columns(2)
-                with img_cols[0]:
-                    st.caption(f"B-mode: {b_name}" if b_name else "B-mode: (not available)")
-                    if b_path:
-                        st.image(b_path, use_container_width=True)
-                    else:
-                        st.info("B-mode image not found in uploaded inputs.")
-                with img_cols[1]:
-                    st.caption(f"M-mode: {m_name}" if m_name else "M-mode: (not available)")
-                    if m_path:
-                        st.image(m_path, use_container_width=True)
-                    else:
-                        st.info("M-mode image not found in uploaded inputs.")
+                    st.markdown(
+                        f"- Patient {row.get('patient_id')} | {row.get('date')} | risk={float(row.get('risk_probability', 0.0)):.3f}"
+                    )
+                    img_cols = st.columns(2)
+                    with img_cols[0]:
+                        st.caption(f"B-mode: {b_name}" if b_name else "B-mode: (not available)")
+                        if b_path:
+                            st.image(b_path, use_container_width=True)
+                        else:
+                            st.info("B-mode image not found in uploaded inputs.")
+                    with img_cols[1]:
+                        st.caption(f"M-mode: {m_name}" if m_name else "M-mode: (not available)")
+                        if m_path:
+                            st.image(m_path, use_container_width=True)
+                        else:
+                            st.info("M-mode image not found in uploaded inputs.")
 
         if detection_summary.get("recheck_patients"):
             with st.expander("Recheck patients (same patient across dates)", expanded=False):
