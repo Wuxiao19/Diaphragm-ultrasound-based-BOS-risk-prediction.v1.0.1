@@ -364,10 +364,16 @@ st.caption(
 )
 
 with st.expander("Click to expand: Configure Qwen (SiliconFlow/OpenAI compatible API)", expanded=False):
+    qwen_secret_key = ""
+    try:
+        qwen_secret_key = st.secrets.get("qwen_api_key", "")
+    except Exception:
+        qwen_secret_key = ""
+
     qwen_api_key = st.text_input(
-        "Qwen API Key (recommended via QWEN_API_KEY env var; you can also enter it here)",
+        "Qwen API Key (leave empty to use secrets.toml default; you can override here)",
         type="password",
-        value=os.getenv("QWEN_API_KEY", ""),
+        value=qwen_secret_key,
     )
     qwen_base_url = st.text_input(
         "Base URL",
@@ -394,8 +400,9 @@ def _run_agent_safe(**kwargs):
 
 
 if st.button("🚀 Run Qwen Agent (auto-call detection tools)", type="primary"):
-    if not qwen_api_key.strip():
-        st.error("Please provide a Qwen API Key (or set QWEN_API_KEY in the environment).")
+    final_qwen_key = (qwen_api_key or "").strip() or (qwen_secret_key or "").strip()
+    if not final_qwen_key:
+        st.error("Please provide a Qwen API Key (or set qwen_api_key in secrets.toml).")
     else:
         # Prepare local paths for the agent based on input mode
         b_path_for_agent = None
@@ -450,7 +457,7 @@ if st.button("🚀 Run Qwen Agent (auto-call detection tools)", type="primary"):
                     agent_result = _run_agent_safe(
                         b_image_path=b_path_for_agent,
                         m_image_path=m_path_for_agent,
-                        api_key=qwen_api_key.strip(),
+                        api_key=final_qwen_key,
                         base_url=qwen_base_url.strip(),
                         model=qwen_model.strip(),
                     )
@@ -458,7 +465,7 @@ if st.button("🚀 Run Qwen Agent (auto-call detection tools)", type="primary"):
                     agent_result = _run_agent_safe(
                         b_folder_path=b_folder_for_agent,
                         m_folder_path=m_folder_for_agent,
-                        api_key=qwen_api_key.strip(),
+                        api_key=final_qwen_key,
                         base_url=qwen_base_url.strip(),
                         model=qwen_model.strip(),
                     )
