@@ -363,26 +363,14 @@ st.caption(
     "and risk prediction, then generate an English interpretation. This cannot replace a doctor's diagnosis."
 )
 
-with st.expander("Click to expand: Configure Qwen (SiliconFlow/OpenAI compatible API)", expanded=False):
+qwen_secret_key = ""
+try:
+    qwen_secret_key = st.secrets.get("qwen_api_key", "")
+except Exception:
     qwen_secret_key = ""
-    try:
-        qwen_secret_key = st.secrets.get("qwen_api_key", "")
-    except Exception:
-        qwen_secret_key = ""
 
-    qwen_api_key = st.text_input(
-        "Qwen API Key (leave empty to use secrets.toml default; you can override here)",
-        type="password",
-        value=qwen_secret_key,
-    )
-    qwen_base_url = st.text_input(
-        "Base URL",
-        value=os.getenv("QWEN_BASE_URL", "https://api.siliconflow.cn/v1"),
-    )
-    qwen_model = st.text_input(
-        "Model",
-        value=os.getenv("QWEN_MODEL", "Qwen/Qwen3-8B"),
-    )
+qwen_base_url = os.getenv("QWEN_BASE_URL", "https://api.siliconflow.cn/v1")
+qwen_model = os.getenv("QWEN_MODEL", "Qwen/Qwen3-8B")
 
 st.info("🤖 **Agent mode**: directly use your uploaded images, call backend detection tools, and generate a full analysis. No need to click Run inference first.")
 
@@ -400,9 +388,9 @@ def _run_agent_safe(**kwargs):
 
 
 if st.button("🚀 Run Qwen Agent (auto-call detection tools)", type="primary"):
-    final_qwen_key = (qwen_api_key or "").strip() or (qwen_secret_key or "").strip()
+    final_qwen_key = (qwen_secret_key or "").strip()
     if not final_qwen_key:
-        st.error("Please provide a Qwen API Key (or set qwen_api_key in secrets.toml).")
+        st.error("Please set qwen_api_key in secrets.toml.")
     else:
         # Prepare local paths for the agent based on input mode
         b_path_for_agent = None
