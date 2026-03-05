@@ -39,11 +39,8 @@ def get_llm_client(api_key: str, base_url: str = DEFAULT_LLM_BASE_URL) -> OpenAI
 # ============================================================
 # MCP client reuse & tool discovery
 # ============================================================
-
-# Reuse a global MCP client (avoid restarting subprocesses per call)
 _mcp_client: Optional[Client] = None
 _mcp_client_entry: Optional[str] = None
-
 
 def _resolve_mcp_entry(mcp_entry: str) -> str:
     """Resolve MCP entry path to an absolute path based on this file's directory."""
@@ -225,73 +222,6 @@ Your tasks:
     - Missing modality samples summary
     - Disclaimer (model output cannot replace doctor's diagnosis)
 """
-
-
-
-def llm_explain_detection_sync(
-    detection_json: Dict[str, Any],
-    user_intent: str,
-    api_key: str,
-    base_url: str = DEFAULT_LLM_BASE_URL,
-    model: str = DEFAULT_LLM_MODEL,
-    temperature: float = 0.4,
-) -> str:
-    """
-    Call the LLM synchronously to explain the detection JSON in English.
-
-    Args:
-        - detection_json: detection result from MCP tools (single or batch)
-        - user_intent: user intent (e.g., "Please explain the patient's risk and give suggestions")
-    """
-    # Format JSON as a string for the model
-    json_str = json.dumps(detection_json, ensure_ascii=False, indent=2)
-
-    user_prompt = f"""
-Below is the JSON result from the automated detection model:
-
-{json_str}
-
-User question/need:
-{user_intent}
-
-Please follow the system instructions and provide a complete explanation in English.
-"""
-
-    client = get_llm_client(api_key=api_key, base_url=base_url)
-
-    resp = client.chat.completions.create(
-        model=model,
-        messages=[
-            {"role": "system", "content": LLM_SYSTEM_PROMPT},
-            {"role": "user", "content": user_prompt},
-        ],
-        temperature=temperature,
-    )
-
-    # OpenAI-compatible API style: choices[0].message.content
-    return resp.choices[0].message.content or ""
-
-
-async def llm_explain_detection(
-    detection_json: Dict[str, Any],
-    user_intent: str,
-    api_key: str,
-    base_url: str = DEFAULT_LLM_BASE_URL,
-    model: str = DEFAULT_LLM_MODEL,
-    temperature: float = 0.4,
-) -> str:
-    """
-    Async wrapper for use in async contexts (internally still synchronous HTTP calls).
-    """
-    return llm_explain_detection_sync(
-        detection_json=detection_json,
-        user_intent=user_intent,
-        api_key=api_key,
-        base_url=base_url,
-        model=model,
-        temperature=temperature,
-    )
-
 
 def _parse_merged_key(merged_key: str) -> tuple[str | None, str | None]:
     if not isinstance(merged_key, str):
