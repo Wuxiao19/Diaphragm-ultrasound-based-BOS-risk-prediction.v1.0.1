@@ -371,7 +371,7 @@ async def _cleanup_previous_detect_outputs() -> None:
         return
     for d in list(_last_detect_output_dirs):
         try:
-            if d and os.path.exists(d) and os.path.isdir(d):
+            if d and os.path.exists(d) and os.path.isdir(d) and d.startswith("detect/"):
                 shutil.rmtree(d)
         except Exception:
             # Ignore delete failures and continue
@@ -407,74 +407,41 @@ def export_agent_conversation(messages: List[Dict[str, Any]],
 
 def _normalize_mcp_result(result: Any) -> Dict[str, Any]:
     """
-    Normalize FastMCP/MCP tool results into a Python dict.
+    Normalize MCP tool results into a Python dict.
 
-    Supported inputs:
-        - list[...] (contains TextContent objects whose .text is JSON)
-        - dict (already a dict)
-        - CallToolResult (has structured_content / content / data)
-        - other objects convertible to string
-
-    Returns: parsed dict when possible; otherwise {"raw": str(result)}.
+    Expected MCP structure:
+        CallToolResult
+            └ content[0].text -> JSON string
     """
-    # 1) Direct list (common in fastmcp returns)
-    try:
-        if isinstance(result, list) and result:
-            first = result[0]
-            # Some implementations expose .text on the element
-            text = getattr(first, "text", None)
-            if isinstance(text, str):
-                try:
-                    return json.loads(text)
-                except Exception:
-                    return {"raw": text}
-            # Or the element itself is dict-like
-            if isinstance(first, dict):
-                return first
 
-        # 2) Direct dict
-        if isinstance(result, dict):
-            return result
+    # 1. Already dict
+    if isinstance(result, dict):
+        return result
 
-        # 3) CallToolResult may include structured_content
-        structured = getattr(result, "structured_content", None)
-        if structured:
+    # 2. MCP CallToolResult.content
+    content = getattr(result, "content", None)
+    if content and len(content) > 0:
+        first = content[0]
+        text = getattr(first, "text", None)
+
+        if isinstance(text, str):
             try:
-                # structured_content is usually already a dict
-                return dict(structured)
+                return json.loads(text)
             except Exception:
-                return {"raw_structured": str(structured)}
+                return {"raw": text}
 
-        # 4) content list is common: use first element's .text
-        content = getattr(result, "content", None)
-        if content and len(content) > 0:
-            first = content[0]
-            text = getattr(first, "text", None)
-            if isinstance(text, str):
-                try:
-                    return json.loads(text)
-                except Exception:
-                    return {"raw": text}
+    # 3. FastMCP sometimes returns list
+    if isinstance(result, list) and result:
+        first = result[0]
+        text = getattr(first, "text", None)
 
-        # 5) data field (sometimes a pydantic model or similar)
-        data = getattr(result, "data", None)
-        if data is not None:
-            # If it's a pydantic BaseModel
+        if isinstance(text, str):
             try:
-                if hasattr(data, "dict"):
-                    return data.dict()
+                return json.loads(text)
             except Exception:
-                pass
-            try:
-                return dict(data)
-            except Exception:
-                return {"raw_data": str(data)}
+                return {"raw": text}
 
-    except Exception:
-        # Avoid raising inside the parser; fall back to raw string
-        return {"raw": str(result)}
-
-    # Final fallback: return raw string
+    # 4. Fallback
     return {"raw": str(result)}
 
 
