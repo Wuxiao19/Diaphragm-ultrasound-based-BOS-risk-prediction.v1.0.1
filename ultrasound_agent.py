@@ -522,7 +522,7 @@ Please:
         {"role": "user", "content": user_query},
     ]
 
-    # Try to fetch tools dynamically from MCP, with local fallback inside mcp_list_tools
+    # Try to fetch tools dynamically from MCP
     tools = await mcp_list_tools("agent_et_mcp.py")
 
     # Step 1: let the LLM decide which tool to call (dynamic tools list)
@@ -636,7 +636,8 @@ Please:
             except Exception:
                 return "<unserializable>"
 
-    final_text = final_msg.content or ""
+    raw_final_text = final_msg.content or ""
+    final_text = raw_final_text if raw_final_text.strip() else "Please try again."
 
     # Export conversation (downloadable)
     convo_path = export_agent_conversation(messages, tool_calls_info, tool_results_dict, final_text)
@@ -648,7 +649,7 @@ Please:
         "conversation_export_path": convo_path,
     }
 
-    if not final_text.strip():
+    if not raw_final_text.strip():
         # Add readable debug information
         debug = {
             "messages": _sanitize_for_json(messages),
