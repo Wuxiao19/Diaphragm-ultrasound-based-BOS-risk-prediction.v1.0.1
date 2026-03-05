@@ -1,7 +1,7 @@
 """
-Agent construction using an LLM + FastMCP + MCP tools (agent_et_mcp.py).
+Agent construction using an LLM + FastMCP + MCP tools .
 
-- run_llm_agent: let the LLM decide which MCP tool to call and then summarize the result (true agent behavior).
+- run_llm_agent: let the LLM decide which MCP tool to call and then summarize the result.
 """
 
 from __future__ import annotations
@@ -110,91 +110,9 @@ async def mcp_list_tools(mcp_entry: str = "agent_et_mcp.py") -> List[Dict[str, A
 
     Returns: a list compatible with LLM tool format.
     """
-    def _to_llm_tools(tools: List[Any]) -> List[Dict[str, Any]]:
-        llm_tools: List[Dict[str, Any]] = []
-        for t in tools:
-            # Support dict or object form
-            if isinstance(t, dict):
-                name = t.get("name") or t.get("tool_name")
-                desc = t.get("description") or t.get("desc") or ""
-                params = (
-                    t.get("parameters")
-                    or t.get("schema")
-                    or t.get("input_schema")
-                    or t.get("inputSchema")
-                    or t.get("args")
-                )
-            else:
-                name = getattr(t, "name", None) or getattr(t, "tool_name", None)
-                desc = getattr(t, "description", None) or getattr(t, "desc", None) or ""
-                params = (
-                    getattr(t, "parameters", None)
-                    or getattr(t, "schema", None)
-                    or getattr(t, "input_schema", None)
-                    or getattr(t, "inputSchema", None)
-                    or getattr(t, "args", None)
-                )
-
-            if not name:
-                continue
-
-            func: Dict[str, Any] = {"name": name, "description": desc or ""}
-
-            # Build parameters JSON schema (minimal compatibility)
-            parameters_schema: Dict[str, Any]
-            if isinstance(params, dict):
-                parameters_schema = params
-            elif isinstance(params, list):
-                props: Dict[str, Any] = {}
-                required: List[str] = []
-                for p in params:
-                    if isinstance(p, dict):
-                        pname = p.get("name")
-                        ptype = p.get("type", "string")
-                        pdesc = p.get("description", "")
-                        preq = bool(p.get("required", False))
-                    else:
-                        pname = getattr(p, "name", None)
-                        ptype = getattr(p, "type", "string")
-                        pdesc = getattr(p, "description", "")
-                        preq = bool(getattr(p, "required", False))
-                    if not pname:
-                        continue
-                    props[pname] = {"type": ptype, "description": pdesc}
-                    if preq:
-                        required.append(pname)
-                parameters_schema = {"type": "object", "properties": props}
-                if required:
-                    parameters_schema["required"] = required
-            else:
-                parameters_schema = {"type": "object", "properties": {}}
-
-            func["parameters"] = parameters_schema
-            llm_tools.append({"type": "function", "function": func})
-        return llm_tools
-
-    # Attempt using cached client first, reconnect on failure
-    for _ in range(2):
-        try:
-            client = await get_mcp_client(mcp_entry)
-            if hasattr(client, "list_tools"):
-                tools = await client.list_tools()
-                llm_tools = _to_llm_tools(tools)
-                if llm_tools:
-                    return llm_tools
-        except RuntimeError:
-            await close_mcp_client()
-        except Exception:
-            await close_mcp_client()
-
-    # Last resort: short-lived MCP client context (still uses MCP server)
-    async with Client(_resolve_mcp_entry(mcp_entry)) as transient_client:
-        tools = await transient_client.list_tools()
-        llm_tools = _to_llm_tools(tools)
-        if llm_tools:
-            return llm_tools
-
-    raise RuntimeError("No tools returned from MCP list_tools()")
+    client = await get_mcp_client(mcp_entry)
+    tools = await client.list_tools()
+    return tools
 
 
 def _load_local_tools_from_entry(mcp_entry: str) -> List[Dict[str, Any]]:
