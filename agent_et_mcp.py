@@ -27,7 +27,6 @@ from integrated_detection_gui_ET import DetectionPipeline
 
 mcp = FastMCP("Diaphragm-Ultrasound-ET-Detection")
 
-
 # ============================================================
 # Global pipeline management 
 # ============================================================
@@ -46,6 +45,126 @@ def _get_pipeline() -> DetectionPipeline:
         _pipeline.load_models()
     return _pipeline
 
+# ============================================================
+# Path resolution utilities 
+# ============================================================
+
+def _resolve_file_path(p: Path, which: str = "file") -> Path:
+    """
+    Resolve a file path by trying several fallbacks similar to previous inline logic.
+    Raises FileNotFoundError with a helpful message if no candidate is found.
+    """
+    current_dir = Path.cwd()
+    filename = p.name
+    possible_paths = []
+
+    # 1. Original path
+    possible_paths.append(p)
+
+    # 2. If relative, try current working directory
+    if not p.is_absolute():
+        possible_paths.append(current_dir / p)
+
+    # 3. If path contains "uploaded_inputs", try under current directory
+    path_str = str(p)
+    if "uploaded_inputs" in path_str:
+        parts = path_str.split("uploaded_inputs", 1)
+        if len(parts) > 1:
+            rel_part = parts[1].lstrip("/\\")
+            possible_paths.append(current_dir / "uploaded_inputs" / rel_part)
+
+    # 4. Try using parent directory name + filename
+    if len(p.parts) >= 2:
+        parent_dir = p.parts[-2]
+        possible_paths.append(current_dir / "uploaded_inputs" / parent_dir / filename)
+
+    # 5. Search under uploaded_inputs in current directory (recursive)
+    uploaded_dir = current_dir / "uploaded_inputs"
+    if uploaded_dir.exists():
+        for subdir in uploaded_dir.iterdir():
+            if subdir.is_dir():
+                candidate = subdir / filename
+                if candidate.exists():
+                    possible_paths.append(candidate)
+
+    # Deduplicate while preserving order
+    seen = set()
+    unique_paths = []
+    for candidate in possible_paths:
+        s = str(candidate)
+        if s not in seen:
+            seen.add(s)
+            unique_paths.append(candidate)
+
+    for candidate in unique_paths:
+        if candidate.exists() and candidate.is_file():
+            return candidate
+
+    # Not found
+    raise FileNotFoundError(
+        f"{which.capitalize()} not found: {p}\n"
+        f"Tried paths: {[str(x) for x in unique_paths[:10]]}\n"
+        f"Current working directory: {current_dir}\n"
+        f"Please ensure the file is uploaded to the uploaded_inputs directory"
+    )
+
+
+def _resolve_dir_path(d: Path, which: str = "folder") -> Path:
+    """
+    Resolve a directory path by trying several fallbacks similar to previous inline logic.
+    Raises FileNotFoundError with a helpful message if no candidate is found.
+    """
+    current_dir = Path.cwd()
+    possible_paths = []
+
+    # 1. Original path
+    possible_paths.append(d)
+
+    # 2. If relative, try current working directory
+    if not d.is_absolute():
+        possible_paths.append(current_dir / d)
+
+    # 3. If path contains "uploaded_inputs", try under current directory
+    path_str = str(d)
+    if "uploaded_inputs" in path_str:
+        parts = path_str.split("uploaded_inputs", 1)
+        if len(parts) > 1:
+            rel_part = parts[1].lstrip("/\\")
+            possible_paths.append(current_dir / "uploaded_inputs" / rel_part)
+
+    # 4. Try using directory name
+    if d.name:
+        possible_paths.append(current_dir / "uploaded_inputs" / d.name)
+        possible_paths.append(current_dir / d.name)
+
+    # 5. Search under uploaded_inputs in current directory (recursive)
+    uploaded_dir = current_dir / "uploaded_inputs"
+    if uploaded_dir.exists():
+        for subdir in uploaded_dir.iterdir():
+            if subdir.is_dir() and subdir.name == d.name:
+                possible_paths.append(subdir)
+
+    # Deduplicate while preserving order
+    seen = set()
+    unique_paths = []
+    for candidate in possible_paths:
+        s = str(candidate)
+        if s not in seen:
+            seen.add(s)
+            unique_paths.append(candidate)
+
+    for candidate in unique_paths:
+        if candidate.exists() and candidate.is_dir():
+            return candidate
+
+    # Not found
+    raise FileNotFoundError(
+        f"{which.capitalize()} not found or not a folder: {d}\n"
+        f"Tried paths: {[str(x) for x in unique_paths[:10]]}\n"
+        f"Current working directory: {current_dir}\n"
+        f"Please ensure the folder is uploaded to the uploaded_inputs directory"
+    )
+
 
 # ============================================================
 # Pydantic return model definitions
@@ -57,21 +176,11 @@ class SingleDetectionResult(BaseModel):
 
     b_image: str = Field(description="B-mode image filename used for inference (from pipeline output)")
     m_image: str = Field(description="M-mode image filename used for inference (from pipeline output)")
-    merged_key: str = Field(
-        description="Merged `merged_filename` (format YY-MM-DD-ID) that uniquely identifies an exam"
-    )
-    risk_probability: float = Field(
-        description="Model risk probability (0-1, higher means higher risk)"
-    )
-    prediction: int = Field(
-        description="Binary prediction label: 0=healthy (low risk), 1=diseased (high risk)"
-    )
-    prediction_label: str = Field(
-        description="Prediction label text: 'healthy' or 'diseased'"
-    )
-    detect_output_dir: str = Field(
-        description="Local output directory for this run (contains CSVs and other files)"
-    )
+    merged_key: str = Field(description="Merged `merged_filename` (format YY-MM-DD-ID) that uniquely identifies an exam")
+    risk_probability: float = Field(description="Model risk probability (0-1, higher means higher risk)")
+    prediction: int = Field(description="Binary prediction label: 0=healthy (low risk), 1=diseased (high risk)")
+    prediction_label: str = Field(description="Prediction label text: 'healthy' or 'diseased'")
+    detect_output_dir: str = Field(description="Local output directory for this run (contains CSVs and other files)")
 
 
 class BatchDetectionItem(BaseModel):
@@ -89,12 +198,8 @@ class BatchDetectionResult(BaseModel):
     """Batch detection result."""
 
     total_samples: int = Field(description="Number of successfully predicted samples (rows)")
-    items: List[BatchDetectionItem] = Field(
-        description="Detailed prediction results for each sample"
-    )
-    detect_output_dir: str = Field(
-        description="Output directory for this batch run (contains detect_result.csv, etc.)"
-    )
+    items: List[BatchDetectionItem] = Field(description="Detailed prediction results for each sample")
+    detect_output_dir: str = Field(description="Output directory for this batch run (contains detect_result.csv, etc.)")
 
 
 """
@@ -110,123 +215,9 @@ async def detect_single_pair_impl(
     
     # If path does not exist, try relative or CWD-based resolution
     if not b_path.exists():
-        current_dir = Path.cwd()
-        filename = b_path.name
-        possible_paths = []
-        
-        # 1. Original path
-        possible_paths.append(b_path)
-        
-        # 2. If relative, try current working directory
-        if not b_path.is_absolute():
-            possible_paths.append(current_dir / b_path)
-        
-        # 3. If path contains "uploaded_inputs", try under current directory
-        path_str = str(b_path)
-        if "uploaded_inputs" in path_str:
-            # Extract the portion after uploaded_inputs
-            parts = path_str.split("uploaded_inputs")
-            if len(parts) > 1:
-                rel_part = parts[1].lstrip("/\\")
-                possible_paths.append(current_dir / "uploaded_inputs" / rel_part)
-        
-        # 4. Try using parent directory name + filename
-        if len(b_path.parts) >= 2:
-            parent_dir = b_path.parts[-2]
-            possible_paths.append(current_dir / "uploaded_inputs" / parent_dir / filename)
-        
-        # 5. Search under uploaded_inputs in current directory (recursive)
-        uploaded_dir = current_dir / "uploaded_inputs"
-        if uploaded_dir.exists():
-            for subdir in uploaded_dir.iterdir():
-                if subdir.is_dir():
-                    candidate = subdir / filename
-                    if candidate.exists():
-                        possible_paths.append(candidate)
-        
-        # Deduplicate and check
-        seen = set()
-        unique_paths = []
-        for p in possible_paths:
-            p_str = str(p)
-            if p_str not in seen:
-                seen.add(p_str)
-                unique_paths.append(p)
-        
-        found = False
-        for p in unique_paths:
-            if p.exists() and p.is_file():
-                b_path = p
-                found = True
-                break
-        
-        if not found:
-            raise FileNotFoundError(
-                f"B-mode image not found: {b_image_path}\n"
-                f"Tried paths: {[str(p) for p in unique_paths[:5]]}\n"
-                f"Current working directory: {current_dir}\n"
-                f"Please ensure the file is uploaded to the uploaded_inputs directory"
-            )
-    
+        b_path = _resolve_file_path(b_path, which="B-mode image")    
     if not m_path.exists():
-        # Same logic for M-mode
-        current_dir = Path.cwd()
-        filename = m_path.name
-        possible_paths = []
-        
-        # 1. Original path
-        possible_paths.append(m_path)
-        
-        # 2. If relative, try current working directory
-        if not m_path.is_absolute():
-            possible_paths.append(current_dir / m_path)
-        
-        # 3. If path contains "uploaded_inputs", try under current directory
-        path_str = str(m_path)
-        if "uploaded_inputs" in path_str:
-            # Extract the portion after uploaded_inputs
-            parts = path_str.split("uploaded_inputs")
-            if len(parts) > 1:
-                rel_part = parts[1].lstrip("/\\")
-                possible_paths.append(current_dir / "uploaded_inputs" / rel_part)
-        
-        # 4. Try using parent directory name + filename
-        if len(m_path.parts) >= 2:
-            parent_dir = m_path.parts[-2]
-            possible_paths.append(current_dir / "uploaded_inputs" / parent_dir / filename)
-        
-        # 5. Search under uploaded_inputs in current directory (recursive)
-        uploaded_dir = current_dir / "uploaded_inputs"
-        if uploaded_dir.exists():
-            for subdir in uploaded_dir.iterdir():
-                if subdir.is_dir():
-                    candidate = subdir / filename
-                    if candidate.exists():
-                        possible_paths.append(candidate)
-        
-        # Deduplicate and check
-        seen = set()
-        unique_paths = []
-        for p in possible_paths:
-            p_str = str(p)
-            if p_str not in seen:
-                seen.add(p_str)
-                unique_paths.append(p)
-        
-        found = False
-        for p in unique_paths:
-            if p.exists() and p.is_file():
-                m_path = p
-                found = True
-                break
-        
-        if not found:
-            raise FileNotFoundError(
-                f"M-mode image not found: {m_image_path}\n"
-                f"Tried paths: {[str(p) for p in unique_paths[:5]]}\n"
-                f"Current working directory: {current_dir}\n"
-                f"Please ensure the file is uploaded to the uploaded_inputs directory"
-            )
+        m_path = _resolve_file_path(m_path, which="M-mode image")
 
     pipeline = _get_pipeline()
 
@@ -275,7 +266,6 @@ async def detect_single_pair(
 ) -> SingleDetectionResult:
     """
     Single-patient, single-exam inference interface (MCP tool wrapper).
-
     Internally calls `detect_single_pair_impl` to share the implementation across MCP and local scripts.
     """
     return await detect_single_pair_impl(b_image_path=b_image_path, m_image_path=m_image_path)
@@ -294,116 +284,9 @@ async def detect_batch_folders_impl(
     
     # If path does not exist, try relative or CWD-based resolution
     if not b_dir.exists() or not b_dir.is_dir():
-        current_dir = Path.cwd()
-        possible_paths = []
-        
-        # 1. Original path
-        possible_paths.append(b_dir)
-        
-        # 2. If relative, try current working directory
-        if not b_dir.is_absolute():
-            possible_paths.append(current_dir / b_dir)
-        
-        # 3. If path contains "uploaded_inputs", try under current directory
-        path_str = str(b_dir)
-        if "uploaded_inputs" in path_str:
-            # Extract the portion after uploaded_inputs
-            parts = path_str.split("uploaded_inputs")
-            if len(parts) > 1:
-                rel_part = parts[1].lstrip("/\\")
-                possible_paths.append(current_dir / "uploaded_inputs" / rel_part)
-        
-        # 4. Try using directory name
-        if b_dir.name:
-            possible_paths.append(current_dir / "uploaded_inputs" / b_dir.name)
-            possible_paths.append(current_dir / b_dir.name)
-        
-        # 5. Search under uploaded_inputs in current directory (recursive)
-        uploaded_dir = current_dir / "uploaded_inputs"
-        if uploaded_dir.exists():
-            for subdir in uploaded_dir.iterdir():
-                if subdir.is_dir() and subdir.name == b_dir.name:
-                    possible_paths.append(subdir)
-        
-        # Deduplicate and check
-        seen = set()
-        unique_paths = []
-        for p in possible_paths:
-            p_str = str(p)
-            if p_str not in seen:
-                seen.add(p_str)
-                unique_paths.append(p)
-        
-        found = False
-        for p in unique_paths:
-            if p.exists() and p.is_dir():
-                b_dir = p
-                found = True
-                break
-        
-        if not found:
-            raise FileNotFoundError(
-                f"B-mode image folder not found or not a folder: {b_folder_path}\n"
-                f"Tried paths: {[str(p) for p in unique_paths[:5]]}\n"
-                f"Current working directory: {current_dir}\n"
-                f"Please ensure the folder is uploaded to the uploaded_inputs directory"
-            )
-    
+        b_dir = _resolve_dir_path(b_dir, which="B-mode image folder")    
     if not m_dir.exists() or not m_dir.is_dir():
-        current_dir = Path.cwd()
-        possible_paths = []
-        
-        # 1. Original path 
-        possible_paths.append(m_dir)
-        
-        # 2. If relative, try current working directory
-        if not m_dir.is_absolute():
-            possible_paths.append(current_dir / m_dir)
-        
-        # 3. If path contains "uploaded_inputs", try under current directory
-        path_str = str(m_dir)
-        if "uploaded_inputs" in path_str:
-            # Extract the portion after uploaded_inputs
-            parts = path_str.split("uploaded_inputs")
-            if len(parts) > 1:
-                rel_part = parts[1].lstrip("/\\")
-                possible_paths.append(current_dir / "uploaded_inputs" / rel_part)
-        
-        # 4. Try using directory name
-        if m_dir.name:
-            possible_paths.append(current_dir / "uploaded_inputs" / m_dir.name)
-            possible_paths.append(current_dir / m_dir.name)
-        
-        # 5. Search under uploaded_inputs in current directory (recursive)
-        uploaded_dir = current_dir / "uploaded_inputs"
-        if uploaded_dir.exists():
-            for subdir in uploaded_dir.iterdir():
-                if subdir.is_dir() and subdir.name == m_dir.name:
-                    possible_paths.append(subdir)
-        
-        # Deduplicate and check
-        seen = set()
-        unique_paths = []
-        for p in possible_paths:
-            p_str = str(p)
-            if p_str not in seen:
-                seen.add(p_str)
-                unique_paths.append(p)
-        
-        found = False
-        for p in unique_paths:
-            if p.exists() and p.is_dir():
-                m_dir = p
-                found = True
-                break
-        
-        if not found:
-            raise FileNotFoundError(
-                f"M-mode image folder not found or not a folder: {m_folder_path}\n"
-                f"Tried paths: {[str(p) for p in unique_paths[:5]]}\n"
-                f"Current working directory: {current_dir}\n"
-                f"Please ensure the folder is uploaded to the uploaded_inputs directory"
-            )
+        m_dir = _resolve_dir_path(m_dir, which="M-mode image folder")
 
     pipeline = _get_pipeline()
 
@@ -416,11 +299,7 @@ async def detect_batch_folders_impl(
 
     if results_df is None or len(results_df) == 0:
         # Return empty result if no matches (missing_modality_samples.csv is still saved)
-        return BatchDetectionResult(
-            total_samples=0,
-            items=[],
-            detect_output_dir=str(output_dir),
-        )
+        return BatchDetectionResult(total_samples=0,items=[],detect_output_dir=str(output_dir),)
 
     items: List[BatchDetectionItem] = []
     for _, row in results_df.iterrows():
@@ -457,31 +336,17 @@ async def detect_batch_folders_impl(
 )
 async def detect_batch_folders(
     b_folder_path: Annotated[
-        str,
-        Field(
-            description=(
-                "Folder path containing B-mode ultrasound images. Filenames must follow `YY-MM-DD-<ID>`."
-            )
-        ),
+        str,Field(description=("Folder path containing B-mode ultrasound images. Filenames must follow `YY-MM-DD-<ID>`.")),
     ],
     m_folder_path: Annotated[
-        str,
-        Field(
-            description=(
-                "Folder path containing M-mode ultrasound images. Filenames must follow `YY-MM-DD-<ID>`."
-            )
-        ),
+        str,Field(description=("Folder path containing M-mode ultrasound images. Filenames must follow `YY-MM-DD-<ID>`.")),
     ],
 ) -> BatchDetectionResult:
     """
     Batch inference interface for multiple patients/exams (MCP tool wrapper).
-
     Internally calls `detect_batch_folders_impl` to share the implementation across MCP and local scripts.
     """
-    return await detect_batch_folders_impl(
-        b_folder_path=b_folder_path,
-        m_folder_path=m_folder_path,
-    )
+    return await detect_batch_folders_impl(b_folder_path=b_folder_path,m_folder_path=m_folder_path,)
 
 
 if __name__ == "__main__":
