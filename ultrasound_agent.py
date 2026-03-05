@@ -106,13 +106,27 @@ async def close_mcp_client() -> None:
 
 async def mcp_list_tools(mcp_entry: str = "agent_et_mcp.py") -> List[Dict[str, Any]]:
     """
-    Obtain tool definitions from the MCP server and reconnect if the client is disconnected.
-
-    Returns: a list compatible with LLM tool format.
+    Obtain tool definitions from the MCP server.
     """
     client = await get_mcp_client(mcp_entry)
     tools = await client.list_tools()
-    return tools
+
+    llm_tools = []
+
+    for t in tools:
+        llm_tools.append({
+            "type": "function",
+            "function": {
+                "name": t["name"],
+                "description": t.get("description", ""),
+                "parameters": t.get("inputSchema", {
+                    "type": "object",
+                    "properties": {}
+                })
+            }
+        })
+
+    return llm_tools
 
 
 def _load_local_tools_from_entry(mcp_entry: str) -> List[Dict[str, Any]]:
