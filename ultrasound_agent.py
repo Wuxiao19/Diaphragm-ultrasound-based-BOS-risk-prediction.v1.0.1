@@ -1,7 +1,7 @@
 """
-Agent construction using Qwen3-8B + FastMCP +  MCP tools (agent_et_mcp.py).
+Agent construction using an LLM + FastMCP + MCP tools (agent_et_mcp.py).
 
-- run_qwen_agent: let Qwen decide which MCP tool to call and then summarize the result (true agent behavior).
+- run_llm_agent: let the LLM decide which MCP tool to call and then summarize the result (true agent behavior).
 """
 
 from __future__ import annotations
@@ -26,16 +26,15 @@ from typing import Optional
 
 
 # ============================================================
-# Environment variables & Qwen client initialization
+# Environment variables & LLM client initialization
 # ============================================================
 
-DEFAULT_QWEN_BASE_URL = "https://api.siliconflow.cn/v1"
-DEFAULT_QWEN_MODEL = "Qwen/Qwen3-8B"
+DEFAULT_LLM_BASE_URL = "https://api.siliconflow.cn/v1"
+DEFAULT_LLM_MODEL = "Qwen/Qwen3-8B"
 
 
-def get_qwen_client(api_key: str, base_url: str = DEFAULT_QWEN_BASE_URL) -> OpenAI:
+def get_llm_client(api_key: str, base_url: str = DEFAULT_LLM_BASE_URL) -> OpenAI:
     return OpenAI(api_key=api_key, base_url=base_url)
-
 
 # ============================================================
 # MCP client reuse & tool discovery
@@ -109,10 +108,10 @@ async def mcp_list_tools(mcp_entry: str = "agent_et_mcp.py") -> List[Dict[str, A
     """
     Obtain tool definitions from the MCP server and reconnect if the client is disconnected.
 
-    Returns: a list compatible with Qwen tool format.
+    Returns: a list compatible with LLM tool format.
     """
-    def _to_qwen_tools(tools: List[Any]) -> List[Dict[str, Any]]:
-        qwen_tools: List[Dict[str, Any]] = []
+    def _to_llm_tools(tools: List[Any]) -> List[Dict[str, Any]]:
+        llm_tools: List[Dict[str, Any]] = []
         for t in tools:
             # Support dict or object form
             if isinstance(t, dict):
@@ -171,8 +170,8 @@ async def mcp_list_tools(mcp_entry: str = "agent_et_mcp.py") -> List[Dict[str, A
                 parameters_schema = {"type": "object", "properties": {}}
 
             func["parameters"] = parameters_schema
-            qwen_tools.append({"type": "function", "function": func})
-        return qwen_tools
+            llm_tools.append({"type": "function", "function": func})
+        return llm_tools
 
     # Attempt using cached client first, reconnect on failure
     for _ in range(2):
@@ -180,9 +179,9 @@ async def mcp_list_tools(mcp_entry: str = "agent_et_mcp.py") -> List[Dict[str, A
             client = await get_mcp_client(mcp_entry)
             if hasattr(client, "list_tools"):
                 tools = await client.list_tools()
-                qwen_tools = _to_qwen_tools(tools)
-                if qwen_tools:
-                    return qwen_tools
+                llm_tools = _to_llm_tools(tools)
+                if llm_tools:
+                    return llm_tools
         except RuntimeError:
             await close_mcp_client()
         except Exception:
@@ -191,9 +190,9 @@ async def mcp_list_tools(mcp_entry: str = "agent_et_mcp.py") -> List[Dict[str, A
     # Last resort: short-lived MCP client context (still uses MCP server)
     async with Client(_resolve_mcp_entry(mcp_entry)) as transient_client:
         tools = await transient_client.list_tools()
-        qwen_tools = _to_qwen_tools(tools)
-        if qwen_tools:
-            return qwen_tools
+        llm_tools = _to_llm_tools(tools)
+        if llm_tools:
+            return llm_tools
 
     raise RuntimeError("No tools returned from MCP list_tools()")
 
@@ -201,7 +200,7 @@ async def mcp_list_tools(mcp_entry: str = "agent_et_mcp.py") -> List[Dict[str, A
 def _load_local_tools_from_entry(mcp_entry: str) -> List[Dict[str, Any]]:
     """
     Load tool definitions directly from the MCP entry module without starting a client.
-    This is a safe fallback to avoid hard-coded QWEN_TOOLS.
+    This is a safe fallback to avoid hard-coded LLM_TOOLS.
     """
     entry_path = _resolve_mcp_entry(mcp_entry)
     module_name = f"_mcp_tools_{Path(entry_path).stem}"
@@ -234,10 +233,10 @@ def _load_local_tools_from_entry(mcp_entry: str) -> List[Dict[str, Any]]:
             if callable(fn):
                 candidates.append(fn)
 
-    return _build_qwen_tools_from_candidates(candidates)
+    return _build_llm_tools_from_candidates(candidates)
 
 
-def _build_qwen_tools_from_candidates(candidates: List[Any]) -> List[Dict[str, Any]]:
+def _build_llm_tools_from_candidates(candidates: List[Any]) -> List[Dict[str, Any]]:
     tools: List[Dict[str, Any]] = []
     for item in candidates:
         if isinstance(item, dict):
@@ -287,7 +286,7 @@ def _build_qwen_tools_from_candidates(candidates: List[Any]) -> List[Dict[str, A
             except Exception:
                 params = {"type": "object", "properties": {}}
 
-        # Normalize into Qwen/OpenAI tool format
+        # Normalize into LLM/OpenAI tool format
         func: Dict[str, Any] = {"name": name, "description": desc or ""}
         if isinstance(params, dict):
             func["parameters"] = params
@@ -353,11 +352,11 @@ async def mcp_detect_batch_folders(
 
 
 # ============================================================
-# Qwen explanation section
+# LLM explanation section
 # ============================================================
 
 
-QWEN_SYSTEM_PROMPT = """
+LLM_SYSTEM_PROMPT = """
 You are a senior critical care and respiratory rehabilitation specialist familiar with risk assessment models based on diaphragm B-mode and M-mode ultrasound images.
 
 You can use the following two tools (implemented in other modules):
@@ -408,16 +407,16 @@ Your tasks:
 
 
 
-def qwen_explain_detection_sync(
+def llm_explain_detection_sync(
     detection_json: Dict[str, Any],
     user_intent: str,
     api_key: str,
-    base_url: str = DEFAULT_QWEN_BASE_URL,
-    model: str = DEFAULT_QWEN_MODEL,
+    base_url: str = DEFAULT_LLM_BASE_URL,
+    model: str = DEFAULT_LLM_MODEL,
     temperature: float = 0.4,
 ) -> str:
     """
-    Call Qwen3-8B synchronously to explain the detection JSON in English.
+    Call the LLM synchronously to explain the detection JSON in English.
 
     Args:
         - detection_json: detection result from MCP tools (single or batch)
@@ -437,33 +436,33 @@ User question/need:
 Please follow the system instructions and provide a complete explanation in English.
 """
 
-    client = get_qwen_client(api_key=api_key, base_url=base_url)
+    client = get_llm_client(api_key=api_key, base_url=base_url)
 
     resp = client.chat.completions.create(
         model=model,
         messages=[
-            {"role": "system", "content": QWEN_SYSTEM_PROMPT},
+            {"role": "system", "content": LLM_SYSTEM_PROMPT},
             {"role": "user", "content": user_prompt},
         ],
         temperature=temperature,
     )
 
-    # Qwen-OpenAI API style: choices[0].message.content
+    # OpenAI-compatible API style: choices[0].message.content
     return resp.choices[0].message.content or ""
 
 
-async def qwen_explain_detection(
+async def llm_explain_detection(
     detection_json: Dict[str, Any],
     user_intent: str,
     api_key: str,
-    base_url: str = DEFAULT_QWEN_BASE_URL,
-    model: str = DEFAULT_QWEN_MODEL,
+    base_url: str = DEFAULT_LLM_BASE_URL,
+    model: str = DEFAULT_LLM_MODEL,
     temperature: float = 0.4,
 ) -> str:
     """
     Async wrapper for use in async contexts (internally still synchronous HTTP calls).
     """
-    return qwen_explain_detection_sync(
+    return llm_explain_detection_sync(
         detection_json=detection_json,
         user_intent=user_intent,
         api_key=api_key,
@@ -728,23 +727,23 @@ def _normalize_mcp_result(result: Any) -> Dict[str, Any]:
     return {"raw": str(result)}
 
 
-async def run_qwen_agent(
+async def run_llm_agent(
     b_image_path: str = None,
     m_image_path: str = None,
     b_folder_path: str = None,
     m_folder_path: str = None,
     api_key: str = None,
-    base_url: str = DEFAULT_QWEN_BASE_URL,
-    model: str = DEFAULT_QWEN_MODEL,
+    base_url: str = DEFAULT_LLM_BASE_URL,
+    model: str = DEFAULT_LLM_MODEL,
     user_query: str = None,
 ) -> Dict[str, Any]:
     """
-    True agent behavior—let Qwen decide which detection tool to call.
+    True agent behavior—let the LLM decide which detection tool to call.
 
     Args:
         - b_image_path, m_image_path: image paths for a single exam
         - b_folder_path, m_folder_path: folder paths for batch exams
-        - api_key: Qwen API key
+        - api_key: LLM API key
         - base_url: API base URL (default SiliconFlow)
         - model: model name (default Qwen3-8B)
         - user_query: user natural language request (optional; auto-generated)
@@ -753,7 +752,7 @@ async def run_qwen_agent(
         {
             "tool_calls": [...],  # tool call records
             "tool_results": {...},  # tool results
-            "final_response": "...",  # Qwen final response
+            "final_response": "...",  # LLM final response
         }
     """
     if not api_key:
@@ -799,18 +798,18 @@ Please:
     # Clean up outputs from the previous run (if any)
     await _cleanup_previous_detect_outputs()
 
-    # Get Qwen client
-    client = get_qwen_client(api_key=api_key, base_url=base_url)
+    # Get LLM client
+    client = get_llm_client(api_key=api_key, base_url=base_url)
 
     messages = [
-        {"role": "system", "content": QWEN_SYSTEM_PROMPT},
+        {"role": "system", "content": LLM_SYSTEM_PROMPT},
         {"role": "user", "content": user_query},
     ]
 
     # Try to fetch tools dynamically from MCP, with local fallback inside mcp_list_tools
     tools = await mcp_list_tools("agent_et_mcp.py")
 
-    # Step 1: let Qwen decide which tool to call (dynamic tools list)
+    # Step 1: let the LLM decide which tool to call (dynamic tools list)
     first = client.chat.completions.create(
         model=model,
         messages=messages,
@@ -872,7 +871,7 @@ Please:
             except Exception:
                 detection_summary = None
 
-    # If a structured summary is available, provide it to Qwen as extra context,
+    # If a structured summary is available, provide it to the LLM as extra context,
     # asking it to reference recheck info and missing modality info in the final response.
     if detection_summary is not None:
         summary_str = json.dumps(detection_summary, ensure_ascii=False, indent=2)
@@ -893,7 +892,7 @@ Please:
             }
         )
 
-    # Step 3: let Qwen produce the final response based on tool results and summary
+    # Step 3: let the LLM produce the final response based on tool results and summary
     second = client.chat.completions.create(
         model=model,
         messages=messages,
