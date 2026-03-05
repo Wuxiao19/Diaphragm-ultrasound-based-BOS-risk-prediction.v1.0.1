@@ -32,11 +32,11 @@ The system will automatically perform: feature extraction → feature reduction
 → feature fusion → ExtraTrees-based binary classification.
 
 **Filename convention (IMPORTANT):**
-- filenames must contain `YY-MM-DD-<ID>` pattern, e.g. `24-05-01-C001_xxx`
+- filenames must contain `YY-MM-DD-<ID>` pattern, e.g. `24-05-01-P001_xxx`
 """
 )
 
-
+P
 # ============================================================
 # Helper functions: handle uploaded files and temp dirs
 # ============================================================
@@ -312,7 +312,7 @@ input_mode = st.sidebar.radio(
 st.subheader("1. Upload input data")
 st.caption(
     "File naming rule: each filename must start with `YY-MM-DD-<ID>`, "
-    "e.g. `24-05-01-C001_xxx.png`. The same patient ID on the same date "
+    "e.g. `24-05-01-P001_xxx.png`. The same patient ID on the same date "
     "will be merged as one exam."
 )
 
@@ -591,5 +591,6 @@ st.markdown("---")
 st.caption(
     "Developed by AlMSLab"
 )
+
 
 
