@@ -117,13 +117,15 @@ async def mcp_list_tools(mcp_entry: str = "agent_et_mcp.py") -> List[Dict[str, A
         llm_tools.append({
             "type": "function",
             "function": {
-                "name": t["name"],
-                "description": t.get("description", ""),
-                "parameters": t.get("inputSchema", {
-                    "type": "object",
-                    "properties": {}
-                })
-            }
+                "name": t.name,
+                "description": getattr(t, "description", ""),
+                "parameters": getattr(t,"inputSchema",
+                    {
+                        "type": "object",
+                        "properties": {}
+                    },
+                ),
+            },
         })
 
     return llm_tools
@@ -131,7 +133,6 @@ async def mcp_list_tools(mcp_entry: str = "agent_et_mcp.py") -> List[Dict[str, A
 # ============================================================
 # MCP tool wrappers
 # ============================================================
-
 
 async def mcp_detect_single_pair(
     b_image_path: str,
