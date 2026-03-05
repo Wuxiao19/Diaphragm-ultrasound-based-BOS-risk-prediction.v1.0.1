@@ -8,7 +8,7 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 
-from ultrasound_agent import run_qwen_agent, _build_detection_summary_from_tool_result
+from ultrasound_agent import run_llm_agent, _build_detection_summary_from_tool_result
 import asyncio
 import json
 
@@ -134,7 +134,7 @@ def _on_file_uploader_change(mode: str) -> None:
 
 
 def _render_agent_result(ar: dict) -> None:
-    """Render agent result stored in session_state or returned from run_qwen_agent.
+    """Render agent result stored in session_state or returned from run_llm_agent.
 
     This is separated so the UI remains visible across Streamlit reruns (e.g. after
     clicking download_button) because we read from st.session_state.
@@ -142,7 +142,7 @@ def _render_agent_result(ar: dict) -> None:
     if not ar:
         return
 
-    with st.expander("🔧 View: Tools called by Qwen", expanded=False):
+    with st.expander("🔧 View: Tools called by LLM", expanded=False):
         if ar.get("tool_calls"):
             for i, tc in enumerate(ar["tool_calls"], 1):
                 st.write(f"**Tool {i}**: `{tc['name']}`")
@@ -158,7 +158,7 @@ def _render_agent_result(ar: dict) -> None:
         else:
             st.write("(No tool results)")
 
-    st.markdown("### 💬 Qwen Agent full analysis")
+    st.markdown("### 💬 LLM Agent full analysis")
     detection_summary = None
     if isinstance(ar.get("tool_results"), dict):
         for name, res in ar.get("tool_results", {}).items():
@@ -353,7 +353,7 @@ with col_m:
         )
 
 # ============================================================
-# Global: Qwen Agent mode
+# Global: LLM Agent mode
 # ============================================================
 st.markdown("---")
 st.subheader("2. AI detection and interpretation (Qwen3-8B Agent)")
@@ -363,34 +363,34 @@ st.caption(
     "and risk prediction, then generate an English interpretation. This cannot replace a doctor's diagnosis."
 )
 
-qwen_secret_key = ""
+llm_secret_key = ""
 try:
-    qwen_secret_key = st.secrets.get("qwen_api_key", "")
+    llm_secret_key = st.secrets.get("llm_api_key", "")
 except Exception:
-    qwen_secret_key = ""
+    llm_secret_key = ""
 
-qwen_base_url = os.getenv("QWEN_BASE_URL", "https://api.siliconflow.cn/v1")
-qwen_model = os.getenv("QWEN_MODEL", "Qwen/Qwen3-8B")
+llm_base_url = os.getenv("LLM_BASE_URL", "https://api.siliconflow.cn/v1")
+llm_model = os.getenv("LLM_MODEL", "Qwen/Qwen3-8B")
 
-st.info("🤖 **Agent mode**: directly use your uploaded images, call backend detection tools, and generate a full analysis. No need to click Run inference first.")
+st.info("🤖 **Agent mode**: directly use your uploaded images, call backend detection tools, and generate a full analysis.")
 
 
 def _run_agent_safe(**kwargs):
-    """Call run_qwen_agent and handle older versions without the language parameter."""
+    """Call run_llm_agent and handle older versions without the language parameter."""
     try:
-        return asyncio.run(run_qwen_agent(**kwargs))
+        return asyncio.run(run_llm_agent(**kwargs))
     except TypeError as e:
         if "language" in str(e):
             kwargs.pop("language", None)
-            return asyncio.run(run_qwen_agent(**kwargs))
+            return asyncio.run(run_llm_agent(**kwargs))
         raise
 
 
 
-if st.button("🚀 Run Qwen Agent (auto-call detection tools)", type="primary"):
-    final_qwen_key = (qwen_secret_key or "").strip()
-    if not final_qwen_key:
-        st.error("Please set qwen_api_key in secrets.toml.")
+if st.button("🚀 Run LLM Agent (auto-call detection tools)", type="primary"):
+    final_llm_key = (llm_secret_key or "").strip()
+    if not final_llm_key:
+        st.error("Please set llm_api_key in secrets.toml.")
     else:
         # Prepare local paths for the agent based on input mode
         b_path_for_agent = None
@@ -440,27 +440,27 @@ if st.button("🚀 Run Qwen Agent (auto-call detection tools)", type="primary"):
             # Clear previous results when starting a new agent run
             st.session_state.pop("agent_result", None)
 
-            with st.spinner("🤖 Qwen Agent is working: calling detection tools and generating analysis..."):
+            with st.spinner("🤖 LLM Agent is working: calling detection tools and generating analysis..."):
                 if b_path_for_agent and m_path_for_agent:
                     agent_result = _run_agent_safe(
                         b_image_path=b_path_for_agent,
                         m_image_path=m_path_for_agent,
-                        api_key=final_qwen_key,
-                        base_url=qwen_base_url.strip(),
-                        model=qwen_model.strip(),
+                        api_key=final_llm_key,
+                        base_url=llm_base_url.strip(),
+                        model=llm_model.strip(),
                     )
                 elif b_folder_for_agent and m_folder_for_agent:
                     agent_result = _run_agent_safe(
                         b_folder_path=b_folder_for_agent,
                         m_folder_path=m_folder_for_agent,
-                        api_key=final_qwen_key,
-                        base_url=qwen_base_url.strip(),
-                        model=qwen_model.strip(),
+                        api_key=final_llm_key,
+                        base_url=llm_base_url.strip(),
+                        model=llm_model.strip(),
                     )
                 else:
                     raise ValueError("Unable to determine single or batch mode. Please check your uploads.")
 
-            st.success("✅ Qwen Agent analysis complete!")
+            st.success("✅ LLM Agent analysis complete!")
 
             # Sanitize agent_result into a serializable structure for session_state
             # to avoid non-serializable objects (Path, DataFrame, handles) on rerun.
@@ -515,7 +515,7 @@ if st.button("🚀 Run Qwen Agent (auto-call detection tools)", type="primary"):
                 st.session_state["detect_output_dir"] = detect_output_dir
 
         except Exception as e:
-            st.error(f"❌ Qwen Agent failed: {e}")
+            st.error(f"❌ LLM Agent failed: {e}")
             import traceback
             with st.expander("View detailed error info", expanded=False):
                 st.code(traceback.format_exc())
