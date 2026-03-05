@@ -456,15 +456,13 @@ async def run_llm_agent(
     user_query: str = None,
 ) -> Dict[str, Any]:
     """
-    True agent behavior—let the LLM decide which detection tool to call.
-
     Args:
         - b_image_path, m_image_path: image paths for a single exam
         - b_folder_path, m_folder_path: folder paths for batch exams
         - api_key: LLM API key
         - base_url: API base URL (default SiliconFlow)
         - model: model name (default Qwen3-8B)
-        - user_query: user natural language request (optional; auto-generated)
+        - user_query: user natural language request (auto-generated)
 
     Returns:
         {
@@ -504,7 +502,7 @@ I have folders of diaphragm ultrasound images for multiple patients. Please call
 
 Please:
 1. Do not provide any conclusions before calling a tool; you must actually call the MCP tool before responding.
-2. Choose and call the correct batch detection tool (detect_batch_folders).
+2. Choose and call the correct batch detection tool.
 3. After getting the JSON result, summarize the risk distribution across patients.
 4. Identify high-risk patients (risk_probability > 0.6) and list their IDs and probabilities.
 5. Provide 1–3 clinical or management suggestions.
