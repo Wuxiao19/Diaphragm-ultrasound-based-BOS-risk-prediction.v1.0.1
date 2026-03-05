@@ -36,7 +36,6 @@ The system will automatically perform: feature extraction → feature reduction
 """
 )
 
-P
 # ============================================================
 # Helper functions: handle uploaded files and temp dirs
 # ============================================================
@@ -591,6 +590,7 @@ st.markdown("---")
 st.caption(
     "Developed by AlMSLab"
 )
+
 
 
 
