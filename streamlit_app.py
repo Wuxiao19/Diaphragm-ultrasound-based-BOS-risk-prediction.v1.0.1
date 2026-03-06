@@ -8,7 +8,7 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 
-from ultrasound_agent import run_llm_agent, _build_detection_summary_from_tool_result
+from ultrasound_agent import run_llm_agent
 import asyncio
 import json
 
@@ -35,6 +35,7 @@ The system will automatically perform: feature extraction → feature reduction
 - filenames must contain `YY-MM-DD-<ID>` pattern, e.g. `24-05-01-P001_xxx`
 """
 )
+
 
 # ============================================================
 # Helper functions: handle uploaded files and temp dirs
@@ -135,8 +136,7 @@ def _on_file_uploader_change(mode: str) -> None:
 def _render_agent_result(ar: dict) -> None:
     """Render agent result stored in session_state or returned from run_llm_agent.
 
-    This is separated so the UI remains visible across Streamlit reruns (e.g. after
-    clicking download_button) because we read from st.session_state.
+    This is separated so the UI remains visible across Streamlit reruns 
     """
     if not ar:
         return
@@ -160,13 +160,12 @@ def _render_agent_result(ar: dict) -> None:
     st.markdown("### 💬 LLM Agent full analysis")
     detection_summary = None
     if isinstance(ar.get("tool_results"), dict):
-        for name, res in ar.get("tool_results", {}).items():
+        for _, res in ar.get("tool_results", {}).items():
             if isinstance(res, dict) and res:
-                try:
-                    detection_summary = _build_detection_summary_from_tool_result(res)
+                summary = res.get("detection_summary")
+                if isinstance(summary, dict):
+                    detection_summary = summary
                     break
-                except Exception:
-                    detection_summary = None
 
     if detection_summary:
         def _find_image_path(filename: str) -> str | None:
@@ -590,7 +589,5 @@ st.markdown("---")
 st.caption(
     "Developed by AlMSLab"
 )
-
-
 
 
