@@ -10,8 +10,9 @@ two tools (for the agent):
 from __future__ import annotations
 
 import os
+import re
 from pathlib import Path
-from typing import List, Optional, Annotated
+from typing import List, Optional, Annotated, Dict, Any
 
 import numpy as np
 import pandas as pd
@@ -19,6 +20,15 @@ from fastmcp import FastMCP
 from pydantic import BaseModel, Field
 
 from integrated_detection_gui_ET import DetectionPipeline
+
+
+def _parse_merged_key(merged_key: str) -> tuple[str | None, str | None]:
+    if not isinstance(merged_key, str):
+        return None, None
+    m = re.match(r"(\d{2}-\d{2}-\d{2})-([A-Z]\d+)", merged_key)
+    if not m:
+        return None, None
+    return m.group(1), m.group(2)
 
 
 # ============================================================
@@ -181,6 +191,9 @@ class SingleDetectionResult(BaseModel):
     prediction: int = Field(description="Binary prediction label: 0=healthy (low risk), 1=diseased (high risk)")
     prediction_label: str = Field(description="Prediction label text: 'healthy' or 'diseased'")
     detect_output_dir: str = Field(description="Local output directory for this run (contains CSVs and other files)")
+    detection_summary: Dict[str, Any] = Field(
+        description="Pre-built summary for agent/LLM consumption"
+    )
 
 
 class BatchDetectionItem(BaseModel):
@@ -200,6 +213,76 @@ class BatchDetectionResult(BaseModel):
     total_samples: int = Field(description="Number of successfully predicted samples (rows)")
     items: List[BatchDetectionItem] = Field(description="Detailed prediction results for each sample")
     detect_output_dir: str = Field(description="Output directory for this batch run (contains detect_result.csv, etc.)")
+    detection_summary: Dict[str, Any] = Field(
+        description="Pre-built summary for agent/LLM consumption"
+    )
+
+
+def _build_missing_modality_summary(detect_output_dir: str) -> Dict[str, Any] | None:
+    if not detect_output_dir:
+        return None
+    missing_csv_path = os.path.join(detect_output_dir, "missing_modality_samples.csv")
+    if not os.path.exists(missing_csv_path):
+        return None
+    try:
+        df_missing = pd.read_csv(missing_csv_path)
+        total_missing = int(len(df_missing))
+        by_type = (
+            df_missing["missing_modality"].value_counts().to_dict()
+            if "missing_modality" in df_missing.columns
+            else {}
+        )
+        by_patient: Dict[str, int] = {}
+        if "pid" in df_missing.columns:
+            by_patient = df_missing["pid"].value_counts().to_dict()
+        return {
+            "total_missing_samples": total_missing,
+            "missing_by_type": by_type,
+            "missing_by_patient": by_patient,
+            "csv_path": missing_csv_path,
+        }
+    except Exception:
+        return None
+
+
+def _build_detection_summary(
+    mode: str,
+    items: List[Dict[str, Any]],
+    detect_output_dir: str,
+) -> Dict[str, Any]:
+    visits_by_pid: Dict[str, List[Dict[str, Any]]] = {}
+    for it in items:
+        pid = it.get("patient_id")
+        if not pid:
+            continue
+        visits_by_pid.setdefault(pid, []).append(it)
+
+    recheck_patients: List[Dict[str, Any]] = []
+    for pid, visits in visits_by_pid.items():
+        dates = sorted({v.get("date") for v in visits if v.get("date")})
+        if len(dates) > 1:
+            recheck_patients.append(
+                {
+                    "patient_id": pid,
+                    "exam_dates": dates,
+                    "visits": sorted(
+                        visits, key=lambda x: (str(x.get("date") or ""), x.get("merged_key", ""))
+                    ),
+                }
+            )
+
+    summary: Dict[str, Any] = {
+        "mode": mode,
+        "total_samples": len(items),
+        "items": items,
+        "recheck_patients": recheck_patients,
+    }
+
+    missing_summary = _build_missing_modality_summary(detect_output_dir)
+    if missing_summary is not None:
+        summary["missing_modality_summary"] = missing_summary
+
+    return summary
 
 
 """
@@ -233,14 +316,32 @@ async def detect_single_pair_impl(
 
     row = results_df.iloc[0]
 
+    merged_key = str(row.get("merged_filename", ""))
+    date_str, pid = _parse_merged_key(merged_key)
+    summary_items = [
+        {
+            "merged_key": merged_key,
+            "date": date_str,
+            "patient_id": pid,
+            "risk_probability": float(row.get("risk_probability", 0.0)),
+            "prediction": int(row.get("prediction", 0)),
+            "prediction_label": str(row.get("prediction_label", "")),
+            "b_image": str(row.get("b_filename", b_path.name)),
+            "m_image": str(row.get("m_filename", m_path.name)),
+        }
+    ]
+
+    detection_summary = _build_detection_summary("single", summary_items, str(output_dir))
+
     return SingleDetectionResult(
         b_image=str(row.get("b_filename", b_path.name)),
         m_image=str(row.get("m_filename", m_path.name)),
-        merged_key=str(row.get("merged_filename", "")),
+        merged_key=merged_key,
         risk_probability=float(row.get("risk_probability", 0.0)),
         prediction=int(row.get("prediction", 0)),
         prediction_label=str(row.get("prediction_label", "")),
         detect_output_dir=str(output_dir),
+        detection_summary=detection_summary,
     )
 
 
@@ -298,27 +399,51 @@ async def detect_batch_folders_impl(
     )
 
     if results_df is None or len(results_df) == 0:
+        detection_summary = _build_detection_summary("batch", [], str(output_dir))
         # Return empty result if no matches (missing_modality_samples.csv is still saved)
-        return BatchDetectionResult(total_samples=0,items=[],detect_output_dir=str(output_dir),)
+        return BatchDetectionResult(
+            total_samples=0,
+            items=[],
+            detect_output_dir=str(output_dir),
+            detection_summary=detection_summary,
+        )
 
     items: List[BatchDetectionItem] = []
+    summary_items: List[Dict[str, Any]] = []
     for _, row in results_df.iterrows():
+        merged_key = str(row.get("merged_filename", ""))
+        date_str, pid = _parse_merged_key(merged_key)
         prob = float(row.get("risk_probability", 0.0))
         items.append(
             BatchDetectionItem(
                 b_image=str(row.get("b_filename", "")),
                 m_image=str(row.get("m_filename", "")),
-                merged_key=str(row.get("merged_filename", "")),
+                merged_key=merged_key,
                 risk_probability=prob,
                 prediction=int(row.get("prediction", 0)),
                 prediction_label=str(row.get("prediction_label", "")),
             )
         )
+        summary_items.append(
+            {
+                "merged_key": merged_key,
+                "date": date_str,
+                "patient_id": pid,
+                "risk_probability": prob,
+                "prediction": int(row.get("prediction", 0)),
+                "prediction_label": str(row.get("prediction_label", "")),
+                "b_image": str(row.get("b_filename", "")),
+                "m_image": str(row.get("m_filename", "")),
+            }
+        )
+
+    detection_summary = _build_detection_summary("batch", summary_items, str(output_dir))
 
     return BatchDetectionResult(
         total_samples=len(items),
         items=items,
         detect_output_dir=str(output_dir),
+        detection_summary=detection_summary,
     )
 
 
