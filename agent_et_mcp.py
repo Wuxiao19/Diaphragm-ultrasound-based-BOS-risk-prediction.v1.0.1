@@ -21,16 +21,6 @@ from pydantic import BaseModel, Field
 
 from integrated_detection_gui_ET import DetectionPipeline
 
-
-def _parse_merged_key(merged_key: str) -> tuple[str | None, str | None]:
-    if not isinstance(merged_key, str):
-        return None, None
-    m = re.match(r"(\d{2}-\d{2}-\d{2})-([A-Z]\d+)", merged_key)
-    if not m:
-        return None, None
-    return m.group(1), m.group(2)
-
-
 # ============================================================
 # MCP server initialization
 # ============================================================
@@ -42,7 +32,6 @@ mcp = FastMCP("Diaphragm-Ultrasound-ET-Detection")
 # ============================================================
 
 _pipeline: Optional[DetectionPipeline] = None
-
 
 def _get_pipeline() -> DetectionPipeline:
     """
@@ -180,7 +169,6 @@ def _resolve_dir_path(d: Path, which: str = "folder") -> Path:
 # Pydantic return model definitions
 # ============================================================
 
-
 class SingleDetectionResult(BaseModel):
     """Detection result for a single B/M image pair."""
 
@@ -191,9 +179,7 @@ class SingleDetectionResult(BaseModel):
     prediction: int = Field(description="Binary prediction label: 0=healthy (low risk), 1=diseased (high risk)")
     prediction_label: str = Field(description="Prediction label text: 'healthy' or 'diseased'")
     detect_output_dir: str = Field(description="Local output directory for this run (contains CSVs and other files)")
-    detection_summary: Dict[str, Any] = Field(
-        description="Pre-built summary for agent/LLM consumption"
-    )
+    detection_summary: Dict[str, Any] = Field(description="Pre-built summary for agent/LLM consumption")
 
 
 class BatchDetectionItem(BaseModel):
@@ -213,9 +199,7 @@ class BatchDetectionResult(BaseModel):
     total_samples: int = Field(description="Number of successfully predicted samples (rows)")
     items: List[BatchDetectionItem] = Field(description="Detailed prediction results for each sample")
     detect_output_dir: str = Field(description="Output directory for this batch run (contains detect_result.csv, etc.)")
-    detection_summary: Dict[str, Any] = Field(
-        description="Pre-built summary for agent/LLM consumption"
-    )
+    detection_summary: Dict[str, Any] = Field(description="Pre-built summary for agent/LLM consumption")
 
 
 def _build_missing_modality_summary(detect_output_dir: str) -> Dict[str, Any] | None:
@@ -244,12 +228,15 @@ def _build_missing_modality_summary(detect_output_dir: str) -> Dict[str, Any] | 
     except Exception:
         return None
 
+def _parse_merged_key(merged_key: str) -> tuple[str | None, str | None]:
+    if not isinstance(merged_key, str):
+        return None, None
+    m = re.match(r"(\d{2}-\d{2}-\d{2})-([A-Z]\d+)", merged_key)
+    if not m:
+        return None, None
+    return m.group(1), m.group(2)
 
-def _build_detection_summary(
-    mode: str,
-    items: List[Dict[str, Any]],
-    detect_output_dir: str,
-) -> Dict[str, Any]:
+def _build_detection_summary(mode: str,items: List[Dict[str, Any]],detect_output_dir: str,) -> Dict[str, Any]:
     visits_by_pid: Dict[str, List[Dict[str, Any]]] = {}
     for it in items:
         pid = it.get("patient_id")
@@ -265,8 +252,7 @@ def _build_detection_summary(
                 {
                     "patient_id": pid,
                     "exam_dates": dates,
-                    "visits": sorted(
-                        visits, key=lambda x: (str(x.get("date") or ""), x.get("merged_key", ""))
+                    "visits": sorted(visits, key=lambda x: (str(x.get("date") or ""), x.get("merged_key", ""))
                     ),
                 }
             )
@@ -283,7 +269,6 @@ def _build_detection_summary(
         summary["missing_modality_summary"] = missing_summary
 
     return summary
-
 
 """
 Internal implementation: single B/M image pair detection.
