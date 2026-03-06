@@ -9,14 +9,12 @@ from __future__ import annotations
 import asyncio
 import json
 import os
-import re
 from pathlib import Path
 from typing import Dict, Any, List
 import importlib.util
 import inspect
 import sys
 
-import pandas as pd
 from dotenv import load_dotenv
 from fastmcp import Client
 from openai import OpenAI
@@ -223,106 +221,6 @@ Your tasks:
     - Disclaimer (model output cannot replace doctor's diagnosis)
 """
 
-def _parse_merged_key(merged_key: str) -> tuple[str | None, str | None]:
-    if not isinstance(merged_key, str):
-        return None, None
-    m = re.match(r"(\d{2}-\d{2}-\d{2})-(C\d{3}|B\d{3}|P\d{3})", merged_key)
-    if not m:
-        return None, None
-    return m.group(1), m.group(2)
-
-
-def _build_detection_summary_from_tool_result(tool_result: Dict[str, Any]) -> Dict[str, Any]:
-    """
-    Build a structured summary JSON from MCP tool results (single or batch),
-    including per-patient summaries, recheck info, and missing modality stats (if any).
-    """
-    # 1) Normalize items list
-    if "items" in tool_result:
-        mode = "batch"
-        raw_items: List[Dict[str, Any]] = list(tool_result.get("items") or [])
-    else:
-        mode = "single"
-        raw_items = [tool_result]
-
-    items_enriched: List[Dict[str, Any]] = []
-    for r in raw_items:
-        merged_key = str(r.get("merged_key", "") or r.get("merged_filename", ""))
-        date_str, pid = _parse_merged_key(merged_key)
-        items_enriched.append(
-            {
-                "merged_key": merged_key,
-                "date": date_str,
-                "patient_id": pid,
-                "risk_probability": float(r.get("risk_probability", 0.0)),
-                "prediction": int(r.get("prediction", 0)),
-                "prediction_label": str(r.get("prediction_label", "")),
-                "b_image": str(r.get("b_image", r.get("b_filename", ""))),
-                "m_image": str(r.get("m_image", r.get("m_filename", ""))),
-            }
-        )
-
-    # 2) Identify recheck patients (same patient_id across different dates)
-    visits_by_pid: Dict[str, List[Dict[str, Any]]] = {}
-    for it in items_enriched:
-        pid = it.get("patient_id")
-        if not pid:
-            continue
-        visits_by_pid.setdefault(pid, []).append(it)
-
-    recheck_patients: List[Dict[str, Any]] = []
-    for pid, visits in visits_by_pid.items():
-        dates = sorted({v.get("date") for v in visits if v.get("date")})
-        if len(dates) > 1:
-            # Multiple dates -> recheck
-            recheck_patients.append(
-                {
-                    "patient_id": pid,
-                    "exam_dates": dates,
-                    "visits": sorted(
-                        visits, key=lambda x: (str(x.get("date") or ""), x.get("merged_key", ""))
-                    ),
-                }
-            )
-
-    # 3) Missing modality summary (from missing_modality_samples.csv if present)
-    missing_summary: Dict[str, Any] | None = None
-    detect_output_dir = tool_result.get("detect_output_dir")
-    if isinstance(detect_output_dir, str) and detect_output_dir:
-        missing_csv_path = os.path.join(detect_output_dir, "missing_modality_samples.csv")
-        if os.path.exists(missing_csv_path):
-            try:
-                df_missing = pd.read_csv(missing_csv_path)
-                total_missing = int(len(df_missing))
-                by_type = (
-                    df_missing["missing_modality"].value_counts().to_dict()
-                    if "missing_modality" in df_missing.columns
-                    else {}
-                )
-                by_patient: Dict[str, int] = {}
-                if "pid" in df_missing.columns:
-                    by_patient = df_missing["pid"].value_counts().to_dict()
-                missing_summary = {
-                    "total_missing_samples": total_missing,
-                    "missing_by_type": by_type,
-                    "missing_by_patient": by_patient,
-                    "csv_path": missing_csv_path,
-                }
-            except Exception:
-                # Ignore missing stats if reading fails
-                missing_summary = None
-
-    # 4) Overall summary
-    summary: Dict[str, Any] = {
-        "mode": mode,
-        "total_samples": len(items_enriched),
-        "items": items_enriched,
-        "recheck_patients": recheck_patients,
-    }
-    if missing_summary is not None:
-        summary["missing_modality_summary"] = missing_summary
-
-    return summary
 
 
 async def _call_mcp_tool(tool_name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
@@ -580,12 +478,11 @@ Please:
             }
         )
 
-        # Try to build a structured summary (only once)
+        # Try to read structured summary from tool result (only once)
         if detection_summary is None and isinstance(tool_result, dict):
-            try:
-                detection_summary = _build_detection_summary_from_tool_result(tool_result)
-            except Exception:
-                detection_summary = None
+            summary = tool_result.get("detection_summary")
+            if isinstance(summary, dict):
+                detection_summary = summary
 
     # If a structured summary is available, provide it to the LLM as extra context,
     # asking it to reference recheck info and missing modality info in the final response.
