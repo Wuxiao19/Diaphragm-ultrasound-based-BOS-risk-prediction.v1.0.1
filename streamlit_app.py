@@ -92,34 +92,6 @@ def save_uploaded_files_as_folder(uploaded_files, subdir: str) -> str:
             f.write(uf.read())
     return str(target_dir)
 
-
-def to_relative_path(abs_path: str) -> str:
-    """
-    Convert an absolute path to a project-root-relative path. This is mainly used
-    to turn local uploaded_inputs paths into a form that the MCP server can resolve.
-    """
-    try:
-        abs_path_obj = Path(abs_path)
-        # Prefer a path relative to the current working directory
-        try:
-            rel_path = abs_path_obj.relative_to(Path.cwd())
-            return str(rel_path)
-        except ValueError:
-            # If relative_to fails, try slicing after "uploaded_inputs"
-            parts = abs_path_obj.parts
-            if "uploaded_inputs" in parts:
-                idx = parts.index("uploaded_inputs")
-                rel_parts = parts[idx:]
-                return str(Path(*rel_parts))
-            return abs_path_obj.name
-    except Exception:
-        # Return the original path on any exception to avoid breaking the flow
-        return abs_path
-
-
-# Keep at most this number of recent detect/runX directories (older ones are removed).
-KEEP_LAST_RUNS = 20
-
 # Initialize session_state
 if "last_upload_key" not in st.session_state:
     st.session_state["last_upload_key"] = None
@@ -589,5 +561,4 @@ st.markdown("---")
 st.caption(
     "Developed by AlMSLab"
 )
-
 
