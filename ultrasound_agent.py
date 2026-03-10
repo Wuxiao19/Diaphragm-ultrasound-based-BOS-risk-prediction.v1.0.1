@@ -123,49 +123,7 @@ async def mcp_list_tools(mcp_entry: str = "agent_et_mcp.py") -> List[Dict[str, A
             },
         })
 
-    return llm_tools
-
-# ============================================================
-# MCP tool wrappers
-# ============================================================
-
-async def mcp_detect_single_pair(
-    b_image_path: str,
-    m_image_path: str,
-    mcp_entry: str = "agent_et_mcp.py",
-) -> Dict[str, Any]:
-    """
-    Call MCP tool detect_single_pair via FastMCP client to get a single B/M detection result.
-    """
-    client = await get_mcp_client(mcp_entry)
-    result = await client.call_tool(
-        "detect_single_pair",
-        {
-            "b_image_path": b_image_path,
-            "m_image_path": m_image_path,
-        },
-    )
-    return _normalize_mcp_result(result)
-
-
-async def mcp_detect_batch_folders(
-    b_folder_path: str,
-    m_folder_path: str,
-    mcp_entry: str = "agent_et_mcp.py",
-) -> Dict[str, Any]:
-    """
-    Call MCP tool detect_batch_folders via FastMCP client to get batch B/M detection results.
-    """
-    client = await get_mcp_client(mcp_entry)
-    result = await client.call_tool(
-        "detect_batch_folders",
-        {
-            "b_folder_path": b_folder_path,
-            "m_folder_path": m_folder_path,
-        },
-    )
-    return _normalize_mcp_result(result)
-    
+    return llm_tools   
 
 # ============================================================
 # LLM explanation section
