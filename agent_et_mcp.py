@@ -270,20 +270,32 @@ def _build_detection_summary(mode: str,items: List[Dict[str, Any]],detect_output
 
     return summary
 
-"""
-Internal implementation: single B/M image pair detection.
-"""
-async def detect_single_pair_impl(
-    b_image_path: str,
-    m_image_path: str,
+# ============================================================
+# Tool 1: single B/M image pair detection
+# ============================================================
+
+@mcp.tool(
+    name="detect_single_pair",
+    description=(
+        "Use the ExtraTrees pipeline to detect risk probability for a B-mode and M-mode diaphragm ultrasound pair."
+        "Requirement: filenames must contain `YY-MM-DD-<ID>`, e.g. `24-05-01-C001_xxx.png`."
+    ),
+)
+async def detect_single_pair(
+    b_image_path: Annotated[
+        str, Field(description="Absolute or relative path to a single B-mode ultrasound image")
+    ],
+    m_image_path: Annotated[
+        str, Field(description="Absolute or relative path to a single M-mode ultrasound image")
+    ],
 ) -> SingleDetectionResult:
+    """Single-patient, single-exam inference."""
 
     b_path = Path(b_image_path)
     m_path = Path(m_image_path)
-    
-    # If path does not exist, try relative or CWD-based resolution
+
     if not b_path.exists():
-        b_path = _resolve_file_path(b_path, which="B-mode image")    
+        b_path = _resolve_file_path(b_path, which="B-mode image")
     if not m_path.exists():
         m_path = _resolve_file_path(m_path, which="M-mode image")
 
@@ -331,46 +343,31 @@ async def detect_single_pair_impl(
 
 
 # ============================================================
-# Tool 1: single B/M image pair detection (MCP entrypoint)
+# Tool 2: batch B/M folder detection
 # ============================================================
 
-
 @mcp.tool(
-    name="detect_single_pair",
+    name="detect_batch_folders",
     description=(
-        "Use the ExtraTrees pipeline to detect risk probability for a B-mode and M-mode diaphragm ultrasound pair."
-        "Requirement: filenames must contain `YY-MM-DD-<ID>`, e.g. `24-05-01-C001_xxx.png`."
+        "Batch detection: input a B-mode image folder and an M-mode image folder."
+        "The pipeline pairs and merges by `YY-MM-DD-<ID>` and returns risk probabilities for each sample."
     ),
 )
-async def detect_single_pair(
-    b_image_path: Annotated[
-        str, Field(description="Absolute or relative path to a single B-mode ultrasound image")
+async def detect_batch_folders(
+    b_folder_path: Annotated[
+        str, Field(description="Folder path containing B-mode ultrasound images. Filenames must follow `YY-MM-DD-<ID>`.")
     ],
-    m_image_path: Annotated[
-        str, Field(description="Absolute or relative path to a single M-mode ultrasound image")
+    m_folder_path: Annotated[
+        str, Field(description="Folder path containing M-mode ultrasound images. Filenames must follow `YY-MM-DD-<ID>`.")
     ],
-) -> SingleDetectionResult:
-    """
-    Single-patient, single-exam inference interface (MCP tool wrapper).
-    Internally calls `detect_single_pair_impl` to share the implementation across MCP and local scripts.
-    """
-    return await detect_single_pair_impl(b_image_path=b_image_path, m_image_path=m_image_path)
-
-
-"""
-Internal implementation: batch B/M folder detection (shared by MCP tool and local testing).
-"""
-async def detect_batch_folders_impl(
-    b_folder_path: str,
-    m_folder_path: str,
 ) -> BatchDetectionResult:
+    """Batch inference for multiple patients/exams."""
 
     b_dir = Path(b_folder_path)
     m_dir = Path(m_folder_path)
-    
-    # If path does not exist, try relative or CWD-based resolution
+
     if not b_dir.exists() or not b_dir.is_dir():
-        b_dir = _resolve_dir_path(b_dir, which="B-mode image folder")    
+        b_dir = _resolve_dir_path(b_dir, which="B-mode image folder")
     if not m_dir.exists() or not m_dir.is_dir():
         m_dir = _resolve_dir_path(m_dir, which="M-mode image folder")
 
@@ -385,7 +382,6 @@ async def detect_batch_folders_impl(
 
     if results_df is None or len(results_df) == 0:
         detection_summary = _build_detection_summary("batch", [], str(output_dir))
-        # Return empty result if no matches (missing_modality_samples.csv is still saved)
         return BatchDetectionResult(
             total_samples=0,
             items=[],
@@ -430,33 +426,6 @@ async def detect_batch_folders_impl(
         detect_output_dir=str(output_dir),
         detection_summary=detection_summary,
     )
-
-
-# ============================================================
-# Tool 2: batch B/M folder detection (MCP entrypoint)
-# ============================================================
-
-
-@mcp.tool(
-    name="detect_batch_folders",
-    description=(
-        "Batch detection: input a B-mode image folder and an M-mode image folder."
-        "The pipeline pairs and merges by `YY-MM-DD-<ID>` and returns risk probabilities for each sample."
-    ),
-)
-async def detect_batch_folders(
-    b_folder_path: Annotated[
-        str,Field(description=("Folder path containing B-mode ultrasound images. Filenames must follow `YY-MM-DD-<ID>`.")),
-    ],
-    m_folder_path: Annotated[
-        str,Field(description=("Folder path containing M-mode ultrasound images. Filenames must follow `YY-MM-DD-<ID>`.")),
-    ],
-) -> BatchDetectionResult:
-    """
-    Batch inference interface for multiple patients/exams (MCP tool wrapper).
-    Internally calls `detect_batch_folders_impl` to share the implementation across MCP and local scripts.
-    """
-    return await detect_batch_folders_impl(b_folder_path=b_folder_path,m_folder_path=m_folder_path,)
 
 
 if __name__ == "__main__":
