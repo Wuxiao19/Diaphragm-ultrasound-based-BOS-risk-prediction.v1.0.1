@@ -48,13 +48,22 @@ def _get_pipeline() -> DetectionPipeline:
 # Path resolution utilities 
 # ============================================================
 
-def _resolve_file_path(p: Path, which: str = "file") -> Path:
+def _resolve_path(p: Path, is_dir: bool = False, which: str = None) -> Path:
     """
-    Resolve a file path by trying several fallbacks similar to previous inline logic.
-    Raises FileNotFoundError with a helpful message if no candidate is found.
+    Resolve a file or directory path by trying several fallbacks.
+
+    Args:
+        p: Path to resolve
+        is_dir: True if expecting a directory, False for file
+        which: Description for error message (e.g., "B-mode image")
+
+    Raises:
+        FileNotFoundError: If no valid path is found
     """
+    if which is None:
+        which = "folder" if is_dir else "file"
+
     current_dir = Path.cwd()
-    filename = p.name
     possible_paths = []
 
     # 1. Original path
@@ -72,19 +81,25 @@ def _resolve_file_path(p: Path, which: str = "file") -> Path:
             rel_part = parts[1].lstrip("/\\")
             possible_paths.append(current_dir / "uploaded_inputs" / rel_part)
 
-    # 4. Try using parent directory name + filename
-    if len(p.parts) >= 2:
-        parent_dir = p.parts[-2]
-        possible_paths.append(current_dir / "uploaded_inputs" / parent_dir / filename)
+    # 4. Try using name under uploaded_inputs
+    if p.name:
+        possible_paths.append(current_dir / "uploaded_inputs" / p.name)
+        if not is_dir and len(p.parts) >= 2:
+            # For files, also try parent_dir/filename
+            parent_dir = p.parts[-2]
+            possible_paths.append(current_dir / "uploaded_inputs" / parent_dir / p.name)
 
-    # 5. Search under uploaded_inputs in current directory (recursive)
+    # 5. Search under uploaded_inputs recursively
     uploaded_dir = current_dir / "uploaded_inputs"
     if uploaded_dir.exists():
         for subdir in uploaded_dir.iterdir():
             if subdir.is_dir():
-                candidate = subdir / filename
-                if candidate.exists():
-                    possible_paths.append(candidate)
+                if is_dir and subdir.name == p.name:
+                    possible_paths.append(subdir)
+                elif not is_dir:
+                    candidate = subdir / p.name
+                    if candidate.exists():
+                        possible_paths.append(candidate)
 
     # Deduplicate while preserving order
     seen = set()
@@ -95,73 +110,22 @@ def _resolve_file_path(p: Path, which: str = "file") -> Path:
             seen.add(s)
             unique_paths.append(candidate)
 
+    # Find first valid path
     for candidate in unique_paths:
-        if candidate.exists() and candidate.is_file():
-            return candidate
+        if is_dir:
+            if candidate.exists() and candidate.is_dir():
+                return candidate
+        else:
+            if candidate.exists() and candidate.is_file():
+                return candidate
 
     # Not found
+    type_desc = "folder" if is_dir else "file"
     raise FileNotFoundError(
         f"{which.capitalize()} not found: {p}\n"
         f"Tried paths: {[str(x) for x in unique_paths[:10]]}\n"
         f"Current working directory: {current_dir}\n"
-        f"Please ensure the file is uploaded to the uploaded_inputs directory"
-    )
-
-
-def _resolve_dir_path(d: Path, which: str = "folder") -> Path:
-    """
-    Resolve a directory path by trying several fallbacks similar to previous inline logic.
-    Raises FileNotFoundError with a helpful message if no candidate is found.
-    """
-    current_dir = Path.cwd()
-    possible_paths = []
-
-    # 1. Original path
-    possible_paths.append(d)
-
-    # 2. If relative, try current working directory
-    if not d.is_absolute():
-        possible_paths.append(current_dir / d)
-
-    # 3. If path contains "uploaded_inputs", try under current directory
-    path_str = str(d)
-    if "uploaded_inputs" in path_str:
-        parts = path_str.split("uploaded_inputs", 1)
-        if len(parts) > 1:
-            rel_part = parts[1].lstrip("/\\")
-            possible_paths.append(current_dir / "uploaded_inputs" / rel_part)
-
-    # 4. Try using directory name
-    if d.name:
-        possible_paths.append(current_dir / "uploaded_inputs" / d.name)
-        possible_paths.append(current_dir / d.name)
-
-    # 5. Search under uploaded_inputs in current directory (recursive)
-    uploaded_dir = current_dir / "uploaded_inputs"
-    if uploaded_dir.exists():
-        for subdir in uploaded_dir.iterdir():
-            if subdir.is_dir() and subdir.name == d.name:
-                possible_paths.append(subdir)
-
-    # Deduplicate while preserving order
-    seen = set()
-    unique_paths = []
-    for candidate in possible_paths:
-        s = str(candidate)
-        if s not in seen:
-            seen.add(s)
-            unique_paths.append(candidate)
-
-    for candidate in unique_paths:
-        if candidate.exists() and candidate.is_dir():
-            return candidate
-
-    # Not found
-    raise FileNotFoundError(
-        f"{which.capitalize()} not found or not a folder: {d}\n"
-        f"Tried paths: {[str(x) for x in unique_paths[:10]]}\n"
-        f"Current working directory: {current_dir}\n"
-        f"Please ensure the folder is uploaded to the uploaded_inputs directory"
+        f"Please ensure the {type_desc} is uploaded to the uploaded_inputs directory"
     )
 
 
@@ -295,9 +259,9 @@ async def detect_single_pair(
     m_path = Path(m_image_path)
 
     if not b_path.exists():
-        b_path = _resolve_file_path(b_path, which="B-mode image")
+        b_path = _resolve_path(b_path, is_dir=False, which="B-mode image")
     if not m_path.exists():
-        m_path = _resolve_file_path(m_path, which="M-mode image")
+        m_path = _resolve_path(m_path, is_dir=False, which="M-mode image")
 
     pipeline = _get_pipeline()
 
@@ -367,9 +331,9 @@ async def detect_batch_folders(
     m_dir = Path(m_folder_path)
 
     if not b_dir.exists() or not b_dir.is_dir():
-        b_dir = _resolve_dir_path(b_dir, which="B-mode image folder")
+        b_dir = _resolve_path(b_dir, is_dir=True, which="B-mode image folder")
     if not m_dir.exists() or not m_dir.is_dir():
-        m_dir = _resolve_dir_path(m_dir, which="M-mode image folder")
+        m_dir = _resolve_path(m_dir, is_dir=True, which="M-mode image folder")
 
     pipeline = _get_pipeline()
 
