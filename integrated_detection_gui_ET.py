@@ -284,31 +284,13 @@ class DetectionPipeline:
         )
         return df
 
-    def reduce_features_from_df(self, df_raw: pd.DataFrame, model_type: str) -> pd.DataFrame:
-        """Reduce features from raw feature CSV (requires filename + f_0... columns)."""
-        if "filename" not in df_raw.columns:
-            raise ValueError(f"{model_type} CSV missing 'filename' column")
-        selected_idx = self.selected_features[model_type]
-        feature_cols = [f"f_{i}" for i in selected_idx]
-        missing = [c for c in feature_cols if c not in df_raw.columns]
-        if missing:
-            raise ValueError(
-                f"{model_type} CSV missing feature columns {missing[:5]} (total {len(missing)})"
-            )
-        selected = df_raw[feature_cols].values
-        df = pd.DataFrame(selected, columns=feature_cols)
-        df.insert(0, "filename", df_raw["filename"].values)
-        self.log(
-            f"CSV feature reduction done: original {df_raw.shape[1]} columns -> {len(feature_cols)} selected"
-        )
-        return df
 
     def merge_features(self, df_b: pd.DataFrame, df_m: pd.DataFrame) -> pd.DataFrame:
         """Merge B- and M-mode features by (date, patient_id) parsed from filenames."""
         self.log("Start merging B- and M-mode features...")
 
         def extract_date_pid(name: str) -> tuple[str | None, str | None]:
-            m = re.match(r"(\d{2}-\d{2}-\d{2})-(C\d{3}|B\d{3}|P\d{3})", str(name))
+            m = re.match(r"(\d{2}-\d{2}-\d{2})-([A-Z]\d+)", str(name))
             if m:
                 return m.group(1), m.group(2)
             return None, None
@@ -490,7 +472,7 @@ class DetectionPipeline:
         self.log(f"Results saved: {result_csv_path}")
         return result_csv_path, results_df
 
-    def run(self, b_input: str, m_input: str, is_folder: bool, use_csv: bool):
+    def run(self, b_input: str, m_input: str, is_folder: bool):
         """Run full pipeline."""
         try:
             run_num = self._get_next_run_number()
@@ -501,43 +483,33 @@ class DetectionPipeline:
             self.log(f"Output directory: {output_dir}")
             self.log("=" * 60)
 
-            if use_csv:
-                self.log("Using feature-CSV mode")
-                df_b_raw = pd.read_csv(b_input)
-                df_m_raw = pd.read_csv(m_input)
-                df_b = self.reduce_features_from_df(df_b_raw, "B")
-                df_m = self.reduce_features_from_df(df_m_raw, "M")
-                self.log(
-                    f"B CSV samples: {len(df_b_raw)}, M CSV samples: {len(df_m_raw)}"
+            if is_folder:
+                b_paths = sorted(
+                    [
+                        os.path.join(b_input, f)
+                        for f in os.listdir(b_input)
+                        if f.lower().endswith((".jpg", ".jpeg", ".png", ".bmp"))
+                    ]
+                )
+                m_paths = sorted(
+                    [
+                        os.path.join(m_input, f)
+                        for f in os.listdir(m_input)
+                        if f.lower().endswith((".jpg", ".jpeg", ".png", ".bmp"))
+                    ]
                 )
             else:
-                if is_folder:
-                    b_paths = sorted(
-                        [
-                            os.path.join(b_input, f)
-                            for f in os.listdir(b_input)
-                            if f.lower().endswith((".jpg", ".jpeg", ".png", ".bmp"))
-                        ]
-                    )
-                    m_paths = sorted(
-                        [
-                            os.path.join(m_input, f)
-                            for f in os.listdir(m_input)
-                            if f.lower().endswith((".jpg", ".jpeg", ".png", ".bmp"))
-                        ]
-                    )
-                else:
-                    b_paths = [b_input]
-                    m_paths = [m_input]
+                b_paths = [b_input]
+                m_paths = [m_input]
 
-                self.log(f"B-mode image count: {len(b_paths)}")
-                self.log(f"M-mode image count: {len(m_paths)}")
+            self.log(f"B-mode image count: {len(b_paths)}")
+            self.log(f"M-mode image count: {len(m_paths)}")
 
-                b_features, b_filenames = self.extract_features(b_paths, "B")
-                m_features, m_filenames = self.extract_features(m_paths, "M")
+            b_features, b_filenames = self.extract_features(b_paths, "B")
+            m_features, m_filenames = self.extract_features(m_paths, "M")
 
-                df_b = self.reduce_features(b_features, b_filenames, "B")
-                df_m = self.reduce_features(m_features, m_filenames, "M")
+            df_b = self.reduce_features(b_features, b_filenames, "B")
+            df_m = self.reduce_features(m_features, m_filenames, "M")
 
             os.makedirs(output_dir, exist_ok=True)
             df_b.to_csv(os.path.join(output_dir, "b_features_reduced.csv"), index=False)
