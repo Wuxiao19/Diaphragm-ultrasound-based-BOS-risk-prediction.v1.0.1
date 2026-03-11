@@ -10,16 +10,12 @@ import asyncio
 import json
 import os
 from pathlib import Path
-from typing import Dict, Any, List 
-import sys
+from typing import Dict, Any, List, Optional
 
-from dotenv import load_dotenv
 from fastmcp import Client
 from openai import OpenAI
 import shutil
 import time
-from typing import Optional
-
 
 # ============================================================
 # Environment variables & LLM client initialization
@@ -508,4 +504,5 @@ Please:
         result_obj["debug"] = debug
 
     return result_obj
+
 
