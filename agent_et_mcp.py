@@ -269,7 +269,6 @@ async def detect_single_pair(
         b_input=str(b_path),
         m_input=str(m_path),
         is_folder=False,
-        use_csv=False,
     )
 
     if results_df is None or len(results_df) == 0:
@@ -341,7 +340,6 @@ async def detect_batch_folders(
         b_input=str(b_dir),
         m_input=str(m_dir),
         is_folder=True,
-        use_csv=False,
     )
 
     if results_df is None or len(results_df) == 0:
