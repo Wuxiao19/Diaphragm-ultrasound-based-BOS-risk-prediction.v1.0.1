@@ -93,8 +93,6 @@ def save_uploaded_files_as_folder(uploaded_files, subdir: str) -> str:
     return str(target_dir)
 
 # Initialize session_state
-if "last_upload_key" not in st.session_state:
-    st.session_state["last_upload_key"] = None
 if "detect_output_dir" not in st.session_state:
     st.session_state["detect_output_dir"] = None
 
@@ -345,18 +343,6 @@ llm_model = os.getenv("LLM_MODEL", "Qwen/Qwen3-8B")
 st.info("🤖 **Agent mode**: directly use your uploaded images, call backend detection tools, and generate a full analysis.")
 
 
-def _run_agent_safe(**kwargs):
-    """Call run_llm_agent and handle older versions without the language parameter."""
-    try:
-        return asyncio.run(run_llm_agent(**kwargs))
-    except TypeError as e:
-        if "language" in str(e):
-            kwargs.pop("language", None)
-            return asyncio.run(run_llm_agent(**kwargs))
-        raise
-
-
-
 if st.button("🚀 Run LLM Agent (auto-call detection tools)", type="primary"):
     final_llm_key = (llm_secret_key or "").strip()
     if not final_llm_key:
@@ -412,21 +398,21 @@ if st.button("🚀 Run LLM Agent (auto-call detection tools)", type="primary"):
 
             with st.spinner("🤖 LLM Agent is working: calling detection tools and generating analysis..."):
                 if b_path_for_agent and m_path_for_agent:
-                    agent_result = _run_agent_safe(
+                    agent_result = asyncio.run(run_llm_agent(
                         b_image_path=b_path_for_agent,
                         m_image_path=m_path_for_agent,
                         api_key=final_llm_key,
                         base_url=llm_base_url.strip(),
                         model=llm_model.strip(),
-                    )
+                    ))
                 elif b_folder_for_agent and m_folder_for_agent:
-                    agent_result = _run_agent_safe(
+                    agent_result = asyncio.run(run_llm_agent(
                         b_folder_path=b_folder_for_agent,
                         m_folder_path=m_folder_for_agent,
                         api_key=final_llm_key,
                         base_url=llm_base_url.strip(),
                         model=llm_model.strip(),
-                    )
+                    ))
                 else:
                     raise ValueError("Unable to determine single or batch mode. Please check your uploads.")
 
@@ -561,4 +547,5 @@ st.markdown("---")
 st.caption(
     "Developed by AlMSLab"
 )
+
 
