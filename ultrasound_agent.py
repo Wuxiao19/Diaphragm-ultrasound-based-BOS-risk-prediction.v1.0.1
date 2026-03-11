@@ -10,9 +10,7 @@ import asyncio
 import json
 import os
 from pathlib import Path
-from typing import Dict, Any, List
-import importlib.util
-import inspect
+from typing import Dict, Any, List 
 import sys
 
 from dotenv import load_dotenv
@@ -181,6 +179,16 @@ Your tasks:
 
 
 
+def _track_detect_output_dir(normalized: Dict[str, Any]) -> None:
+    """Track detect_output_dir for cleanup."""
+    try:
+        d = normalized.get("detect_output_dir")
+        if isinstance(d, str) and d and d not in _last_detect_output_dirs:
+            _last_detect_output_dirs.append(d)
+    except Exception:
+        pass
+
+
 async def _call_mcp_tool(tool_name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
     # First try the reused global client (performance; avoid frequent restarts)
     try:
@@ -188,35 +196,19 @@ async def _call_mcp_tool(tool_name: str, arguments: Dict[str, Any]) -> Dict[str,
         try:
             result = await client.call_tool(tool_name, arguments)
         except RuntimeError:
-            # If the client is not connected or session is invalid, fall back to a short-lived context
             client = None
         else:
             normalized = _normalize_mcp_result(result)
-            # Track detect_output_dir for cleanup
-            try:
-                d = normalized.get("detect_output_dir")
-                if isinstance(d, str) and d:
-                    if d not in _last_detect_output_dirs:
-                        _last_detect_output_dirs.append(d)
-            except Exception:
-                pass
+            _track_detect_output_dir(normalized)
             return normalized
     except Exception:
-        # On any error, fall back to short-lived context
         client = None
 
     # If the reused client is unavailable, use a short-lived async context client
     async with Client(_resolve_mcp_entry("agent_et_mcp.py")) as transient_client:
         result = await transient_client.call_tool(tool_name, arguments)
         normalized = _normalize_mcp_result(result)
-    # Track detect_output_dir for cleanup
-        try:
-            d = normalized.get("detect_output_dir")
-            if isinstance(d, str) and d:
-                if d not in _last_detect_output_dirs:
-                    _last_detect_output_dirs.append(d)
-        except Exception:
-            pass
+        _track_detect_output_dir(normalized)
         return normalized
 
 
