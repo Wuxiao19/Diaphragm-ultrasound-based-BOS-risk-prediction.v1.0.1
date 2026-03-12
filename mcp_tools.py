@@ -180,8 +180,8 @@ def _build_missing_modality_summary(detect_output_dir: str) -> Dict[str, Any] | 
             else {}
         )
         by_patient: Dict[str, int] = {}
-        if "pid" in df_missing.columns:
-            by_patient = df_missing["pid"].value_counts().to_dict()
+        if "patient_id" in df_missing.columns:
+            by_patient = df_missing["patient_id"].value_counts().to_dict()
         return {
             "total_missing_samples": total_missing,
             "missing_by_type": by_type,
