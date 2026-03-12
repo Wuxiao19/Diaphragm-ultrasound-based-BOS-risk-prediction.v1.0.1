@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import sys
 from pathlib import Path
 from typing import Dict, Any, List, Optional
 
@@ -81,18 +82,6 @@ async def get_mcp_client(mcp_entry: str = "agent_et_mcp.py") -> Client:
     return _mcp_client
 
 
-async def close_mcp_client() -> None:
-    """Explicitly close the global MCP client."""
-    global _mcp_client, _mcp_client_entry
-    if _mcp_client is not None:
-        try:
-            await _mcp_client.__aexit__(None, None, None)
-        except (Exception, asyncio.CancelledError):
-            pass
-    _mcp_client = None
-    _mcp_client_entry = None
-
-
 async def mcp_list_tools(mcp_entry: str = "agent_et_mcp.py") -> List[Dict[str, Any]]:
     """
     Obtain tool definitions from the MCP server.
@@ -122,7 +111,6 @@ async def mcp_list_tools(mcp_entry: str = "agent_et_mcp.py") -> List[Dict[str, A
 # ============================================================
 # LLM explanation section
 # ============================================================
-
 
 LLM_SYSTEM_PROMPT = """
 You are a senior critical care and respiratory rehabilitation specialist familiar with risk assessment models based on diaphragm B-mode and M-mode ultrasound images.
@@ -493,7 +481,9 @@ Please:
     }
 
     if not raw_final_text.strip():
-        # Add readable debug information
+        print("=" * 60, file=sys.stderr, flush=True)
+        print("[Agent Debug] LLM returned empty response", file=sys.stderr, flush=True)
+        print("=" * 60, file=sys.stderr, flush=True)
         debug = {
             "messages": _sanitize_for_json(messages),
             "assistant_msg_tool_calls": _sanitize_for_json(getattr(choice, 'message', None) and getattr(choice.message, 'tool_calls', None)),
@@ -502,7 +492,8 @@ Please:
             "tool_results": _sanitize_for_json(tool_results_dict),
         }
         result_obj["debug"] = debug
+        print(json.dumps(debug, ensure_ascii=False, indent=2), file=sys.stderr, flush=True)
+        print("=" * 60, file=sys.stderr, flush=True)
 
     return result_obj
-
 
