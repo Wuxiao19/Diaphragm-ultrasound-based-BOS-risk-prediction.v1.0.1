@@ -122,9 +122,9 @@ When you receive the JSON detection result, typical contents include:
 - For multiple patients: a list of those fields and total samples.
 
 The merged_key format:
-- Looks like "YY-MM-DD-C123", "YY-MM-DD-B123", or "YY-MM-DD-P123".
+- Looks like "YY-MM-DD-A123", "YY-MM-DD-B123", or "YY-MM-DD-C123".
 - "YY-MM-DD" is the exam date (20YY-MM-DD).
-- "C123/B123/P123" is the patient ID.
+- "A123/B123/C123" is the patient ID.
 
 If the same patient ID appears on different dates (e.g., 25-11-08 and 25-12-01), it indicates repeat exams or follow-ups.
 
@@ -151,7 +151,6 @@ Your tasks:
     - Missing modality samples summary
     - Disclaimer (model output cannot replace doctor's diagnosis)
 """
-
 
 
 def _track_detect_output_dir(normalized: Dict[str, Any]) -> None:
@@ -487,3 +486,4 @@ Please:
         print("=" * 60, file=sys.stderr, flush=True)
 
     return result_obj
+
