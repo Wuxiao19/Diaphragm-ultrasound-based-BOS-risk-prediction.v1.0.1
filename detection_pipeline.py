@@ -123,6 +123,18 @@ def load_backbone_and_refinement(model: MIAFEx, ckpt: dict, device):
     return FALLBACK_NUM_CLASSES
 
 # ===================================================================
+# Utility functions
+# ===================================================================
+
+def parse_date_and_patient_id(filename: str) -> tuple[str | None, str | None]:
+    """Parse date and patient ID from filename following YY-MM-DD-<ID> pattern."""
+
+    m = re.match(r"(\d{2}-\d{2}-\d{2})-([A-Z]\d+)", str(filename))
+    if m:
+        return m.group(1), m.group(2)
+    return None, None
+
+# ===================================================================
 # Custom dataset
 # ===================================================================
 
@@ -270,14 +282,8 @@ class DetectionPipeline:
         """Merge B and M mode features by (date, patient_id) parsed from filenames."""
         self.log("Start merging B and M mode features...")
 
-        def extract_date_pid(name: str) -> tuple[str | None, str | None]:
-            m = re.match(r"(\d{2}-\d{2}-\d{2})-([A-Z]\d+)", str(name))
-            if m:
-                return m.group(1), m.group(2)
-            return None, None
-
-        df_b[["date", "pid"]] = df_b["filename"].apply(lambda x: pd.Series(extract_date_pid(x)))
-        df_m[["date", "pid"]] = df_m["filename"].apply(lambda x: pd.Series(extract_date_pid(x)))
+        df_b[["date", "pid"]] = df_b["filename"].apply(lambda x: pd.Series(parse_date_and_patient_id(x)))
+        df_m[["date", "pid"]] = df_m["filename"].apply(lambda x: pd.Series(parse_date_and_patient_id(x)))
 
         b_keys = set(zip(df_b["date"], df_b["pid"]))
         m_keys = set(zip(df_m["date"], df_m["pid"]))
