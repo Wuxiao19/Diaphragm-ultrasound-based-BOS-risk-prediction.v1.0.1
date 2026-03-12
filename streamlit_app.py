@@ -34,7 +34,6 @@ The system will automatically perform: feature extraction → feature reduction
 """
 )
 
-
 # ============================================================
 # Helper functions: handle uploaded files and temp dirs
 # ============================================================
@@ -201,8 +200,8 @@ def _render_agent_result(ar: dict) -> None:
 
             with st.expander("High-risk patient images (B/M mode)", expanded=False):
                 for _, row in high_risk.iterrows():
-                    b_name = row.get("b_image") or row.get("b_filename") or ""
-                    m_name = row.get("m_image") or row.get("m_filename") or ""
+                    b_name = row.get("b_filename") or ""
+                    m_name = row.get("m_filename") or ""
                     b_path = _find_image_path(str(b_name)) if b_name else None
                     m_path = _find_image_path(str(m_name)) if m_name else None
 
@@ -488,7 +487,7 @@ if isinstance(detect_output_dir, str) and detect_output_dir:
             st.markdown("---")
             st.markdown("### 📊 Detection results preview (from MCP pipeline)")
             key_cols = [
-                "merged_filename",
+                "merged_key",
                 "b_filename",
                 "m_filename",
                 "risk_probability",
@@ -535,3 +534,5 @@ if isinstance(detect_output_dir, str) and detect_output_dir:
 
 st.markdown("---")
 st.caption("Developed by AlMSLab")
+
+
