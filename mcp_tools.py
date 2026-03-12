@@ -18,7 +18,7 @@ import pandas as pd
 from fastmcp import FastMCP
 from pydantic import BaseModel, Field
 
-from detection_pipeline import DetectionPipeline
+from detection_pipeline import DetectionPipeline, parse_date_and_patient_id
 
 # ============================================================
 # MCP server initialization
@@ -191,14 +191,6 @@ def _build_missing_modality_summary(detect_output_dir: str) -> Dict[str, Any] | 
     except Exception:
         return None
 
-def _parse_merged_key(merged_key: str) -> tuple[str | None, str | None]:
-    if not isinstance(merged_key, str):
-        return None, None
-    m = re.match(r"(\d{2}-\d{2}-\d{2})-([A-Z]\d+)", merged_key)
-    if not m:
-        return None, None
-    return m.group(1), m.group(2)
-
 def _build_detection_summary(mode: str,items: List[Dict[str, Any]],detect_output_dir: str,) -> Dict[str, Any]:
     visits_by_pid: Dict[str, List[Dict[str, Any]]] = {}
     for it in items:
@@ -276,7 +268,7 @@ async def detect_single_pair(
     row = results_df.iloc[0]
 
     merged_key = str(row.get("merged_filename", ""))
-    date_str, pid = _parse_merged_key(merged_key)
+    date_str, pid = parse_date_and_patient_id(merged_key)
     summary_items = [
         {
             "merged_key": merged_key,
@@ -354,7 +346,7 @@ async def detect_batch_folders(
     summary_items: List[Dict[str, Any]] = []
     for _, row in results_df.iterrows():
         merged_key = str(row.get("merged_filename", ""))
-        date_str, pid = _parse_merged_key(merged_key)
+        date_str, pid = parse_date_and_patient_id(merged_key)
         prob = float(row.get("risk_probability", 0.0))
         items.append(
             BatchDetectionItem(
