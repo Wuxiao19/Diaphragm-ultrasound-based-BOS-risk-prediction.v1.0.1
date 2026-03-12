@@ -46,7 +46,7 @@ CHECKPOINT_PSO_M = os.path.join(BASE_DIR, "checkpoint", "PSO", "M_model", "selec
 CHECKPOINT_RF_DIR = os.path.join(BASE_DIR, "checkpoint", "ExtraTrees")
 DETECT_OUTPUT_DIR = os.path.join(BASE_DIR, "detect")
 
-# Hugging Face checkpoint repo (folder "checkpoint/" is stored in the repo)
+# Hugging Face checkpoint repo 
 HF_REPO_ID = "Wuxiao19/Diaphragm-ultrasound-based-BOS-risk-prediction"
 HF_CHECKPOINT_SUBDIR = "checkpoint"
 
@@ -88,10 +88,7 @@ def safe_load_ckpt(path, device):
 
 
 def load_backbone_and_refinement(model: MIAFEx, ckpt: dict, device):
-    """
-    Load backbone and refinement weights in a safe and consistent way.
-    """
-
+    """Load backbone and refinement weights in a safe and consistent way"""
     # 1. Prefer full model_state_dict if available
     if 'model_state_dict' in ckpt:
         missing, unexpected = model.load_state_dict(
@@ -111,7 +108,7 @@ def load_backbone_and_refinement(model: MIAFEx, ckpt: dict, device):
     if unexpected:
         print(f"[extract] Warning: unexpected keys: {unexpected}", file=sys.stderr, flush=True)
 
-    # 2. Load refinement_weights (same as original logic)
+    # 2. Load refinement_weights
     if 'refinement_weights' in ckpt:
         with torch.no_grad():
             rw = ckpt['refinement_weights'].to(device)
@@ -119,13 +116,11 @@ def load_backbone_and_refinement(model: MIAFEx, ckpt: dict, device):
                 raise ValueError("refinement_weights size mismatch.")
             model.refinement_weights.copy_(rw)
 
-    # 3. Return num_classes (keep original behavior)
+    # 3. Return num_classes
     if 'num_classes' in ckpt:
         return int(ckpt['num_classes'])
 
     return FALLBACK_NUM_CLASSES
-
-
 
 # ===================================================================
 # Custom dataset
@@ -153,7 +148,6 @@ class ImageDataset(Dataset):
             if self.transform:
                 image = self.transform(image)
             return image, os.path.basename(img_path)
-
 
 # ===================================================================
 # Core pipeline
@@ -233,16 +227,11 @@ class DetectionPipeline:
 
         model = self.models[f"miafex_{model_type}"]
         transform = transforms.Compose(
-            [
-                transforms.Resize((IMAGE_SIZE, IMAGE_SIZE)),
-                transforms.ToTensor(),
-            ]
+            [transforms.Resize((IMAGE_SIZE, IMAGE_SIZE)), transforms.ToTensor(),]
         )
 
         dataset = ImageDataset(image_paths, transform=transform)
-        dataloader = DataLoader(
-            dataset, batch_size=BATCH_SIZE, shuffle=False, num_workers=0
-        )
+        dataloader = DataLoader(dataset, batch_size=BATCH_SIZE, shuffle=False, num_workers=0)
 
         all_features: list[np.ndarray] = []
         all_filenames: list[str] = []
@@ -273,15 +262,13 @@ class DetectionPipeline:
         df = pd.DataFrame(selected_features, columns=feature_cols)
         df.insert(0, "filename", filenames)
 
-        self.log(
-            f"Feature reduction done: {features.shape[1]} -> {selected_features.shape[1]} dims"
-        )
+        self.log(f"Feature reduction done: {features.shape[1]} -> {selected_features.shape[1]} dims")
         return df
 
 
     def merge_features(self, df_b: pd.DataFrame, df_m: pd.DataFrame) -> pd.DataFrame:
-        """Merge B- and M-mode features by (date, patient_id) parsed from filenames."""
-        self.log("Start merging B- and M-mode features...")
+        """Merge B and M mode features by (date, patient_id) parsed from filenames."""
+        self.log("Start merging B and M mode features...")
 
         def extract_date_pid(name: str) -> tuple[str | None, str | None]:
             m = re.match(r"(\d{2}-\d{2}-\d{2})-([A-Z]\d+)", str(name))
@@ -289,12 +276,8 @@ class DetectionPipeline:
                 return m.group(1), m.group(2)
             return None, None
 
-        df_b[["date", "pid"]] = df_b["filename"].apply(
-            lambda x: pd.Series(extract_date_pid(x))
-        )
-        df_m[["date", "pid"]] = df_m["filename"].apply(
-            lambda x: pd.Series(extract_date_pid(x))
-        )
+        df_b[["date", "pid"]] = df_b["filename"].apply(lambda x: pd.Series(extract_date_pid(x)))
+        df_m[["date", "pid"]] = df_m["filename"].apply(lambda x: pd.Series(extract_date_pid(x)))
 
         b_keys = set(zip(df_b["date"], df_b["pid"]))
         m_keys = set(zip(df_m["date"], df_m["pid"]))
@@ -304,13 +287,9 @@ class DetectionPipeline:
 
         missing_records: list[dict[str, str]] = []
         for d, p in sorted(only_b):
-            missing_records.append(
-                {"date": d, "pid": p, "missing_modality": "missing M modality"}
-            )
+            missing_records.append({"date": d, "pid": p, "missing_modality": "missing M modality"})
         for d, p in sorted(only_m):
-            missing_records.append(
-                {"date": d, "pid": p, "missing_modality": "missing B modality"}
-            )
+            missing_records.append({"date": d, "pid": p, "missing_modality": "missing B modality"})
 
         self.missing_modalities = missing_records
 
@@ -332,21 +311,14 @@ class DetectionPipeline:
                 merged_row = list(row_m[m_features]) + list(row_b[b_features])
                 merged_rows.append(merged_row)
                 merged_filenames.append(
-                    {
-                        "merged_filename": merged_filename,
-                        "b_filename": b_filename,
-                        "m_filename": m_filename,
-                    }
+                    {"merged_filename": merged_filename, 
+                    "b_filename": b_filename, "m_filename": m_filename,}
                 )
 
         if not merged_rows:
             self.log("No matched B/M pairs found for merging; returning empty merged_df")
             merged_df = pd.DataFrame(
-                columns=[
-                    "merged_filename",
-                    "b_filename",
-                    "m_filename",
-                ]
+                columns=["merged_filename","b_filename","m_filename",]
                 + [f"M_{c}" for c in m_features]
                 + [f"B_{c}" for c in b_features]
             )
@@ -392,13 +364,8 @@ class DetectionPipeline:
         self.log(f"Prediction done: {len(predictions)} samples")
         return avg_proba, predictions
 
-    def save_results(
-        self,
-        merged_df: pd.DataFrame,
-        probabilities: np.ndarray,
-        predictions: np.ndarray,
-        output_dir: str,
-    ) -> tuple[str, pd.DataFrame]:
+    def save_results(self,merged_df: pd.DataFrame, probabilities: np.ndarray, 
+    predictions: np.ndarray, output_dir: str,) -> tuple[str, pd.DataFrame]:
         """Save prediction results and intermediate files."""
         self.log(f"Saving results to {output_dir}...")
         os.makedirs(output_dir, exist_ok=True)
@@ -410,18 +377,14 @@ class DetectionPipeline:
                 "m_filename": merged_df["m_filename"].values,
                 "risk_probability": probabilities,
                 "prediction": predictions,
-                "prediction_label": [
-                    "diseased" if p == 1 else "healthy" for p in predictions
-                ],
+                "prediction_label": ["diseased" if p == 1 else "healthy" for p in predictions],
             }
         )
 
         if len(results_df) > 1:
             group_key = "merged_filename"
             if results_df[group_key].duplicated().any():
-                self.log(
-                    "Found multiple rows with the same date and patient_id, start aggregating..."
-                )
+                self.log("Found multiple rows with the same date and patient_id, start aggregating...")
                 aggregated_rows: list[dict[str, Any]] = []
                 for name, group in results_df.groupby(group_key):
                     avg_proba = group["risk_probability"].mean()
@@ -442,15 +405,11 @@ class DetectionPipeline:
                         }
                     )
                 results_df = pd.DataFrame(aggregated_rows)
-                self.log(
-                    f"Aggregation done: {len(results_df)} unique date-patient_id samples"
-                )
+                self.log(f"Aggregation done: {len(results_df)} unique date-patient_id samples")
 
         if hasattr(self, "missing_modalities") and self.missing_modalities:
             missing_df = pd.DataFrame(self.missing_modalities)
-            missing_csv_path = os.path.join(
-                output_dir, "missing_modality_samples.csv"
-            )
+            missing_csv_path = os.path.join(output_dir, "missing_modality_samples.csv")
             missing_df.to_csv(missing_csv_path, index=False, encoding="utf-8-sig")
             self.log(
                 f"Found {len(missing_df)} samples missing B or M modality; "
@@ -513,14 +472,10 @@ class DetectionPipeline:
             if merged_df is None or merged_df.empty:
                 probabilities = np.array([])
                 predictions = np.array([])
-                _, results_df = self.save_results(
-                    merged_df, probabilities, predictions, output_dir
-                )
+                _, results_df = self.save_results(merged_df, probabilities, predictions, output_dir)
             else:
                 probabilities, predictions = self.predict(merged_df)
-                _, results_df = self.save_results(
-                    merged_df, probabilities, predictions, output_dir
-                )
+                _, results_df = self.save_results(merged_df, probabilities, predictions, output_dir)
 
             self.log("=" * 60)
             self.log("Detection finished!")
@@ -570,22 +525,9 @@ def _checkpoint_paths() -> list[str]:
     return paths
 
 
-def ensure_checkpoints_available(
-    hf_repo_id: str = HF_REPO_ID,
-    hf_subdir: str = HF_CHECKPOINT_SUBDIR,
-    local_checkpoint_dir: str = os.path.join(BASE_DIR, "checkpoint"),
-    gui_log: Optional[callable] = None,
-) -> None:
-    """
-    Ensure the local checkpoint directory exists.
-
-    - If required checkpoint files are missing and huggingface_hub is installed,
-      download repo subfolder `checkpoint/` from Hugging Face into local `checkpoint/`.
-    - If still missing after download, raise FileNotFoundError.
-
-    Notes:
-    - For private repos, set environment variable HF_TOKEN before running.
-    """
+def ensure_checkpoints_available(hf_repo_id: str = HF_REPO_ID,hf_subdir: str = HF_CHECKPOINT_SUBDIR,
+    local_checkpoint_dir: str = os.path.join(BASE_DIR, "checkpoint"), gui_log: Optional[callable] = None,) -> None:
+    """Ensure the local checkpoint directory exists."""
     required = _checkpoint_paths()
     missing_before = [p for p in required if not os.path.exists(p)]
     if not missing_before:
