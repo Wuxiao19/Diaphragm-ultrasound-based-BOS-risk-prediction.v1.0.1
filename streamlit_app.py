@@ -30,10 +30,9 @@ The system will automatically perform: feature extraction → feature reduction
 → feature fusion → ExtraTrees-based binary classification.
 
 **Filename convention (IMPORTANT):**
-- filenames must contain `YY-MM-DD-<ID>` pattern, e.g. `24-05-01-P001_xxx`
+- filenames must contain `YY-MM-DD-<ID>` pattern, e.g. `24-05-01-A001_xxx`
 """
 )
-
 
 # ============================================================
 # Helper functions: handle uploaded files and temp dirs
@@ -278,7 +277,7 @@ input_mode = st.sidebar.radio(
 st.subheader("1. Upload input data")
 st.caption(
     "File naming rule: each filename must start with `YY-MM-DD-<ID>`, "
-    "e.g. `24-05-01-P001_xxx.png`. The same patient ID on the same date "
+    "e.g. `24-05-01-A001_xxx.png`. The same patient ID on the same date "
     "will be merged as one exam."
 )
 
@@ -339,7 +338,6 @@ llm_base_url = os.getenv("LLM_BASE_URL", "https://api.siliconflow.cn/v1")
 llm_model = os.getenv("LLM_MODEL", "Qwen/Qwen3-8B")
 
 st.info("🤖 **Agent mode**: directly use your uploaded images, call backend detection tools, and generate a full analysis.")
-
 
 if st.button("🚀 Run LLM Agent (auto-call detection tools)", type="primary"):
     final_llm_key = (llm_secret_key or "").strip()
