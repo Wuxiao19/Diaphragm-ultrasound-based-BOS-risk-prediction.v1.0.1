@@ -431,7 +431,6 @@ if st.button("🚀 Run LLM Agent", type="primary"):
 
             # Persist agent result in session_state so downloads won't clear the view
             st.session_state["agent_result"] = sanitized_agent_result
-            # Note: rendering is handled in the global block below to avoid duplicates
 
             # ====================================================
             # Extract detect_output_dir from tool results for CSV preview/download
