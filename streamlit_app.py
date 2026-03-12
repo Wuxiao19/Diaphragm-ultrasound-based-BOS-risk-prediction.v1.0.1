@@ -109,18 +109,9 @@ def _render_agent_result(ar: dict) -> None:
         if ar.get("tool_calls"):
             for i, tc in enumerate(ar["tool_calls"], 1):
                 st.write(f"**Tool {i}**: `{tc['name']}`")
-                st.json(tc["arguments"])
         else:
             st.write("(No tools called this run)")
-
-    with st.expander("📊 View: Raw JSON returned by tools (debug)", expanded=False):
-        if ar.get("tool_results"):
-            for name, res in ar.get("tool_results", {}).items():
-                st.write(f"**{name}** result:")
-                st.json(res)
-        else:
-            st.write("(No tool results)")
-
+    
     st.markdown("### 💬 LLM Agent full analysis")
     detection_summary = None
     if isinstance(ar.get("tool_results"), dict):
@@ -526,5 +517,4 @@ if isinstance(detect_output_dir, str) and detect_output_dir:
 
 st.markdown("---")
 st.caption("Developed by AlMSLab")
-
 
