@@ -6,7 +6,7 @@ import uuid
 import numpy as np
 import pandas as pd
 import streamlit as st
-from ultrasound_agent import run_llm_agent
+from llm_agent import run_llm_agent
 import asyncio
 import json
 
