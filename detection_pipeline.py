@@ -303,7 +303,7 @@ class DetectionPipeline:
         m_features = [c for c in df_m.columns if c not in ["filename", "date", "pid"]]
 
         merged_rows: list[list[float]] = []
-        merged_filenames: list[dict[str, str]] = []
+        merged_keys: list[dict[str, str]] = []
 
         for _, row_m in df_m.iterrows():
             m_date = row_m["date"]
@@ -313,18 +313,18 @@ class DetectionPipeline:
             candidates = df_b[(df_b["date"] == m_date) & (df_b["pid"] == m_pid)]
             for _, row_b in candidates.iterrows():
                 b_filename = row_b["filename"]
-                merged_filename = f"{m_date}-{m_pid}"
+                merged_key = f"{m_date}-{m_pid}"
                 merged_row = list(row_m[m_features]) + list(row_b[b_features])
                 merged_rows.append(merged_row)
-                merged_filenames.append(
-                    {"merged_filename": merged_filename, 
+                merged_keys.append(
+                    {"merged_key": merged_key,
                     "b_filename": b_filename, "m_filename": m_filename,}
                 )
 
         if not merged_rows:
             self.log("No matched B/M pairs found for merging; returning empty merged_df")
             merged_df = pd.DataFrame(
-                columns=["merged_filename","b_filename","m_filename",]
+                columns=["merged_key","b_filename","m_filename",]
                 + [f"M_{c}" for c in m_features]
                 + [f"B_{c}" for c in b_features]
             )
@@ -334,8 +334,8 @@ class DetectionPipeline:
             merged_rows,
             columns=[f"M_{c}" for c in m_features] + [f"B_{c}" for c in b_features],
         )
-        filename_df = pd.DataFrame(merged_filenames)
-        merged_df = pd.concat([filename_df, merged_df], axis=1)
+        key_df = pd.DataFrame(merged_keys)
+        merged_df = pd.concat([key_df, merged_df], axis=1)
 
         self.log(f"Merging done: {len(merged_df)} matched samples")
         return merged_df
@@ -378,7 +378,7 @@ class DetectionPipeline:
 
         results_df = pd.DataFrame(
             {
-                "merged_filename": merged_df["merged_filename"].values,
+                "merged_key": merged_df["merged_key"].values,
                 "b_filename": merged_df["b_filename"].values,
                 "m_filename": merged_df["m_filename"].values,
                 "risk_probability": probabilities,
@@ -388,7 +388,7 @@ class DetectionPipeline:
         )
 
         if len(results_df) > 1:
-            group_key = "merged_filename"
+            group_key = "merged_key"
             if results_df[group_key].duplicated().any():
                 self.log("Found multiple rows with the same date and patient_id, start aggregating...")
                 aggregated_rows: list[dict[str, Any]] = []
@@ -398,7 +398,7 @@ class DetectionPipeline:
                     mode_label = "diseased" if mode_pred == 1 else "healthy"
                     aggregated_rows.append(
                         {
-                            "merged_filename": name,
+                            "merged_key": name,
                             "b_filename": ";".join(
                                 group["b_filename"].astype(str).unique()
                             ),
