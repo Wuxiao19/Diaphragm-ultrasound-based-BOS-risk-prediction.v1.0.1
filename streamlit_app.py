@@ -3,11 +3,9 @@ import re
 from pathlib import Path
 import shutil
 import uuid
-
 import numpy as np
 import pandas as pd
 import streamlit as st
-
 from ultrasound_agent import run_llm_agent
 import asyncio
 import json
@@ -191,7 +189,7 @@ def _render_agent_result(ar: dict) -> None:
                     return "color: #2e7d32; font-weight: 600;"  # green
                 return "color: #ef6c00; font-weight: 600;"  # orange
 
-            styled = display_df.style.format({"risk_probability": "{:.3f}"}).applymap(
+            styled = display_df.style.format({"risk_probability": "{:.3f}"}).map(
                 _risk_color, subset=["risk_probability"]
             )
             st.dataframe(styled, use_container_width=True)
