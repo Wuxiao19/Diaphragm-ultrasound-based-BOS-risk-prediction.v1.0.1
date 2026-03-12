@@ -30,9 +30,10 @@ The system will automatically perform: feature extraction → feature reduction
 → feature fusion → ExtraTrees-based binary classification.
 
 **Filename convention (IMPORTANT):**
-- filenames must contain `YY-MM-DD-<ID>` pattern, e.g. `24-05-01-A001_xxx`
+- filenames must contain `YY-MM-DD-<ID>` pattern, e.g. `24-05-01-P001_xxx`
 """
 )
+
 
 # ============================================================
 # Helper functions: handle uploaded files and temp dirs
@@ -277,7 +278,7 @@ input_mode = st.sidebar.radio(
 st.subheader("1. Upload input data")
 st.caption(
     "File naming rule: each filename must start with `YY-MM-DD-<ID>`, "
-    "e.g. `24-05-01-A001_xxx.png`. The same patient ID on the same date "
+    "e.g. `24-05-01-P001_xxx.png`. The same patient ID on the same date "
     "will be merged as one exam."
 )
 
@@ -333,9 +334,6 @@ try:
     llm_secret_key = st.secrets.get("llm_api_key", "")
 except Exception:
     llm_secret_key = ""
-
-llm_base_url = os.getenv("LLM_BASE_URL", "https://api.siliconflow.cn/v1")
-llm_model = os.getenv("LLM_MODEL", "Qwen/Qwen3-8B")
 
 st.info("🤖 **Agent mode**: directly use your uploaded images, call backend detection tools, and generate a full analysis.")
 
@@ -398,16 +396,12 @@ if st.button("🚀 Run LLM Agent (auto-call detection tools)", type="primary"):
                         b_image_path=b_path_for_agent,
                         m_image_path=m_path_for_agent,
                         api_key=final_llm_key,
-                        base_url=llm_base_url.strip(),
-                        model=llm_model.strip(),
                     ))
                 elif b_folder_for_agent and m_folder_for_agent:
                     agent_result = asyncio.run(run_llm_agent(
                         b_folder_path=b_folder_for_agent,
                         m_folder_path=m_folder_for_agent,
                         api_key=final_llm_key,
-                        base_url=llm_base_url.strip(),
-                        model=llm_model.strip(),
                     ))
                 else:
                     raise ValueError("Unable to determine single or batch mode. Please check your uploads.")
@@ -543,5 +537,3 @@ st.markdown("---")
 st.caption(
     "Developed by AlMSLab"
 )
-
-
