@@ -153,7 +153,7 @@ def _render_agent_result(ar: dict) -> None:
         cols[0].metric("Samples", detection_summary.get("total_samples", 0))
         cols[1].metric("Recheck patients", len(detection_summary.get("recheck_patients", [])))
 
-        st.markdown("**Sample details (table)**")
+        st.markdown("**Sample details**")
         items_df = pd.DataFrame(detection_summary.get("items", []))
         if not items_df.empty:
             display_df = items_df[["patient_id", "date", "risk_probability"]].copy()
@@ -517,4 +517,5 @@ if isinstance(detect_output_dir, str) and detect_output_dir:
 
 st.markdown("---")
 st.caption("Developed by AlMSLab")
+
 
