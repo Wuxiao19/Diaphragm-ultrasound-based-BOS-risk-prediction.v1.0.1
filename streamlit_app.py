@@ -25,6 +25,7 @@ st.markdown(
     """  
 Upload **B-mode** and **M-mode** diaphragm ultrasound images
 for one patient (single exam) or for multiple patients (batch exams).
+
 The system will automatically perform: feature extraction → feature reduction
 → feature fusion → ExtraTrees-based binary classification.
 """
