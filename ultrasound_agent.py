@@ -94,16 +94,8 @@ async def mcp_list_tools(mcp_entry: str = "agent_et_mcp.py") -> List[Dict[str, A
     for t in tools:
         llm_tools.append({
             "type": "function",
-            "function": {
-                "name": t.name,
-                "description": getattr(t, "description", ""),
-                "parameters": getattr(t,"inputSchema",
-                    {
-                        "type": "object",
-                        "properties": {}
-                    },
-                ),
-            },
+            "function": {"name": t.name,"description": getattr(t, "description", ""),
+                "parameters": getattr(t,"inputSchema",{"type": "object","properties": {}},),},
         })
 
     return llm_tools   
