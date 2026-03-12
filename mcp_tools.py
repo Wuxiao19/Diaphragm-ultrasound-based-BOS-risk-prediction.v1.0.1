@@ -135,9 +135,9 @@ def _resolve_path(p: Path, is_dir: bool = False, which: str = None) -> Path:
 class SingleDetectionResult(BaseModel):
     """Detection result for a single B/M image pair."""
 
-    b_image: str = Field(description="B-mode image filename used for inference (from pipeline output)")
-    m_image: str = Field(description="M-mode image filename used for inference (from pipeline output)")
-    merged_key: str = Field(description="Merged `merged_filename` (format YY-MM-DD-ID) that uniquely identifies an exam")
+    b_filename: str = Field(description="B-mode image filename used for inference (from pipeline output)")
+    m_filename: str = Field(description="M-mode image filename used for inference (from pipeline output)")
+    merged_key: str = Field(description="Merged `merged_key` (format YY-MM-DD-ID) that uniquely identifies an exam")
     risk_probability: float = Field(description="Model risk probability (0-1, higher means higher risk)")
     prediction: int = Field(description="Binary prediction label: 0=healthy (low risk), 1=diseased (high risk)")
     prediction_label: str = Field(description="Prediction label text: 'healthy' or 'diseased'")
@@ -148,9 +148,9 @@ class SingleDetectionResult(BaseModel):
 class BatchDetectionItem(BaseModel):
     """Result for a single sample in batch detection."""
 
-    b_image: str = Field(description="Merged B-mode filename(s) for this sample (semicolon-separated if multiple)")
-    m_image: str = Field(description="Merged M-mode filename(s) for this sample (semicolon-separated if multiple)")
-    merged_key: str = Field(description="Merged `merged_filename`, format YY-MM-DD-ID")
+    b_filename: str = Field(description="Merged B-mode filename(s) for this sample (semicolon-separated if multiple)")
+    m_filename: str = Field(description="Merged M-mode filename(s) for this sample (semicolon-separated if multiple)")
+    merged_key: str = Field(description="Merged `merged_key`, format YY-MM-DD-ID")
     risk_probability: float = Field(description="Risk probability for this sample")
     prediction: int = Field(description="Prediction label: 0=healthy, 1=diseased")
     prediction_label: str = Field(description="Prediction text label: 'healthy' or 'diseased'")
@@ -267,7 +267,7 @@ async def detect_single_pair(
 
     row = results_df.iloc[0]
 
-    merged_key = str(row.get("merged_filename", ""))
+    merged_key = str(row.get("merged_key", ""))
     date_str, pid = parse_date_and_patient_id(merged_key)
     summary_items = [
         {
@@ -277,16 +277,16 @@ async def detect_single_pair(
             "risk_probability": float(row.get("risk_probability", 0.0)),
             "prediction": int(row.get("prediction", 0)),
             "prediction_label": str(row.get("prediction_label", "")),
-            "b_image": str(row.get("b_filename", b_path.name)),
-            "m_image": str(row.get("m_filename", m_path.name)),
+            "b_filename": str(row.get("b_filename", b_path.name)),
+            "m_filename": str(row.get("m_filename", m_path.name)),
         }
     ]
 
     detection_summary = _build_detection_summary("single", summary_items, str(output_dir))
 
     return SingleDetectionResult(
-        b_image=str(row.get("b_filename", b_path.name)),
-        m_image=str(row.get("m_filename", m_path.name)),
+        b_filename=str(row.get("b_filename", b_path.name)),
+        m_filename=str(row.get("m_filename", m_path.name)),
         merged_key=merged_key,
         risk_probability=float(row.get("risk_probability", 0.0)),
         prediction=int(row.get("prediction", 0)),
@@ -345,13 +345,13 @@ async def detect_batch_folders(
     items: List[BatchDetectionItem] = []
     summary_items: List[Dict[str, Any]] = []
     for _, row in results_df.iterrows():
-        merged_key = str(row.get("merged_filename", ""))
+        merged_key = str(row.get("merged_key", ""))
         date_str, pid = parse_date_and_patient_id(merged_key)
         prob = float(row.get("risk_probability", 0.0))
         items.append(
             BatchDetectionItem(
-                b_image=str(row.get("b_filename", "")),
-                m_image=str(row.get("m_filename", "")),
+                b_filename=str(row.get("b_filename", "")),
+                m_filename=str(row.get("m_filename", "")),
                 merged_key=merged_key,
                 risk_probability=prob,
                 prediction=int(row.get("prediction", 0)),
@@ -366,8 +366,8 @@ async def detect_batch_folders(
                 "risk_probability": prob,
                 "prediction": int(row.get("prediction", 0)),
                 "prediction_label": str(row.get("prediction_label", "")),
-                "b_image": str(row.get("b_filename", "")),
-                "m_image": str(row.get("m_filename", "")),
+                "b_filename": str(row.get("b_filename", "")),
+                "m_filename": str(row.get("m_filename", "")),
             }
         )
 
