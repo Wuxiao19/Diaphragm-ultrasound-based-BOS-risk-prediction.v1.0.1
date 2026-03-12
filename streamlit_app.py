@@ -480,45 +480,47 @@ if isinstance(detect_output_dir, str) and detect_output_dir:
             results_df = pd.read_csv(result_csv_path)
 
             st.markdown("---")
-            with st.expander("📥 Download CSV Results", expanded=False):
-                st.markdown("Download detection results and missing modality samples")
+            st.markdown("### 📥 Download CSV Results")
 
-                # Detection results subsection
-                with st.expander("📊 Detection Results", expanded=False):
-                    key_cols = ["merged_key","b_filename","m_filename",
-                        "risk_probability","prediction","prediction_label",]
-                    show_cols = [c for c in key_cols if c in results_df.columns]
-                    st.dataframe(results_df[show_cols] if show_cols else results_df, use_container_width=False)
+            # Detection results subsection
+            with st.expander("📊 Detection Results", expanded=False):
+                key_cols = ["merged_key","b_filename","m_filename",
+                    "risk_probability","prediction","prediction_label",]
+                show_cols = [c for c in key_cols if c in results_df.columns]
+                st.dataframe(results_df[show_cols] if show_cols else results_df, use_container_width=True)
 
-                    st.download_button(
-                        label="📥 Download Detection Results CSV",
-                        data=results_df.to_csv(index=False, encoding="utf-8-sig"),
-                        file_name="detect_result.csv",
-                        mime="text/csv",
-                        use_container_width=True,
-                    )
+                st.download_button(
+                    label="📥 Download Detection Results CSV",
+                    data=results_df.to_csv(index=False, encoding="utf-8-sig"),
+                    file_name="detect_result.csv",
+                    mime="text/csv",
+                    use_container_width=True,
+                )
 
-                # Missing modality subsection
-                missing_csv_path = os.path.join(detect_output_dir, "missing_modality_samples.csv")
-                if os.path.exists(missing_csv_path):
-                    try:
-                        missing_df = pd.read_csv(missing_csv_path)
-                    except Exception:
-                        missing_df = None
+            # Missing modality subsection
+            missing_csv_path = os.path.join(detect_output_dir, "missing_modality_samples.csv")
+            if os.path.exists(missing_csv_path):
+                try:
+                    missing_df = pd.read_csv(missing_csv_path)
+                except Exception:
+                    missing_df = None
 
-                    if missing_df is not None and not missing_df.empty:
-                        with st.expander("⚠️ Missing Modality Samples", expanded=False):
-                            st.caption(f"Found {len(missing_df)} samples with incomplete B/M pairs (not included in prediction)")
-                            st.dataframe(missing_df, use_container_width=True)
+                if missing_df is not None and not missing_df.empty:
+                    with st.expander("⚠️ Missing Modality Samples", expanded=False):
+                        st.caption(
+                            f"Found {len(missing_df)} samples with incomplete B/M pairs (not included in prediction)"
+                        )
+                        st.dataframe(missing_df, use_container_width=True)
 
-                            st.download_button(
-                                label="📥 Download Missing Modality CSV",
-                                data=missing_df.to_csv(index=False, encoding="utf-8-sig"),
-                                file_name="missing_modality_samples.csv",
-                                mime="text/csv",
-                                use_container_width=True,
-                            )
+                        st.download_button(
+                            label="📥 Download Missing Modality CSV",
+                            data=missing_df.to_csv(index=False, encoding="utf-8-sig"),
+                            file_name="missing_modality_samples.csv",
+                            mime="text/csv",
+                            use_container_width=True,
+                        )
         except Exception:
+            # If reading fails, skip table and downloads
             pass
 
 st.markdown("---")
