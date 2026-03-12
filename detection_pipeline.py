@@ -282,38 +282,38 @@ class DetectionPipeline:
         """Merge B and M mode features by (date, patient_id) parsed from filenames."""
         self.log("Start merging B and M mode features...")
 
-        df_b[["date", "pid"]] = df_b["filename"].apply(lambda x: pd.Series(parse_date_and_patient_id(x)))
-        df_m[["date", "pid"]] = df_m["filename"].apply(lambda x: pd.Series(parse_date_and_patient_id(x)))
+        df_b[["date", "patient_id"]] = df_b["filename"].apply(lambda x: pd.Series(parse_date_and_patient_id(x)))
+        df_m[["date", "patient_id"]] = df_m["filename"].apply(lambda x: pd.Series(parse_date_and_patient_id(x)))
 
-        b_keys = set(zip(df_b["date"], df_b["pid"]))
-        m_keys = set(zip(df_m["date"], df_m["pid"]))
+        b_keys = set(zip(df_b["date"], df_b["patient_id"]))
+        m_keys = set(zip(df_m["date"], df_m["patient_id"]))
 
         only_b = b_keys - m_keys
         only_m = m_keys - b_keys
 
         missing_records: list[dict[str, str]] = []
         for d, p in sorted(only_b):
-            missing_records.append({"date": d, "pid": p, "missing_modality": "missing M modality"})
+            missing_records.append({"date": d, "patient_id": p, "missing_modality": "missing M modality"})
         for d, p in sorted(only_m):
-            missing_records.append({"date": d, "pid": p, "missing_modality": "missing B modality"})
+            missing_records.append({"date": d, "patient_id": p, "missing_modality": "missing B modality"})
 
         self.missing_modalities = missing_records
 
-        b_features = [c for c in df_b.columns if c not in ["filename", "date", "pid"]]
-        m_features = [c for c in df_m.columns if c not in ["filename", "date", "pid"]]
+        b_features = [c for c in df_b.columns if c not in ["filename", "date", "patient_id"]]
+        m_features = [c for c in df_m.columns if c not in ["filename", "date", "patient_id"]]
 
         merged_rows: list[list[float]] = []
         merged_keys: list[dict[str, str]] = []
 
         for _, row_m in df_m.iterrows():
             m_date = row_m["date"]
-            m_pid = row_m["pid"]
+            m_patient_id = row_m["patient_id"]
             m_filename = row_m["filename"]
 
-            candidates = df_b[(df_b["date"] == m_date) & (df_b["pid"] == m_pid)]
+            candidates = df_b[(df_b["date"] == m_date) & (df_b["patient_id"] == m_patient_id)]
             for _, row_b in candidates.iterrows():
                 b_filename = row_b["filename"]
-                merged_key = f"{m_date}-{m_pid}"
+                merged_key = f"{m_date}-{m_patient_id}"
                 merged_row = list(row_m[m_features]) + list(row_b[b_features])
                 merged_rows.append(merged_row)
                 merged_keys.append(
