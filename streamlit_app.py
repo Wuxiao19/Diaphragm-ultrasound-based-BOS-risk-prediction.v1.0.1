@@ -318,10 +318,10 @@ with col_m:
 # Global: LLM Agent mode
 # ============================================================
 st.markdown("---")
-st.subheader("2. AI detection and interpretation (Qwen3-8B Agent)")
+st.subheader("2. AI detection and interpretation")
 st.caption(
     "Note: In this mode, simply upload B-mode and M-mode diaphragm ultrasound images above. "
-    "Qwen will call the backend detection pipeline (MCP tools), complete feature extraction "
+    "Large Language Model will call the backend detection pipeline (MCP tools), complete feature extraction "
     "and risk prediction, then generate an English interpretation. This cannot replace a doctor's diagnosis."
 )
 
