@@ -1,5 +1,4 @@
 import os
-import re
 from pathlib import Path
 import shutil
 import uuid
@@ -28,9 +27,6 @@ Upload **B-mode** and **M-mode** diaphragm ultrasound images
 for one patient (single exam) or for multiple patients (batch exams).
 The system will automatically perform: feature extraction → feature reduction
 → feature fusion → ExtraTrees-based binary classification.
-
-**Filename convention (IMPORTANT):**
-- filenames must contain `YY-MM-DD-<ID>` pattern, e.g. `24-05-01-A001_xxx`
 """
 )
 
@@ -336,7 +332,7 @@ except Exception:
 
 st.info("🤖 **Agent mode**: directly use your uploaded images, call backend detection tools, and generate a full analysis.")
 
-if st.button("🚀 Run LLM Agent (auto-call detection tools)", type="primary"):
+if st.button("🚀 Run LLM Agent", type="primary"):
     final_llm_key = (llm_secret_key or "").strip()
     if not final_llm_key:
         st.error("Please set llm_api_key in secrets.toml.")
@@ -473,9 +469,8 @@ if st.session_state.get("agent_result"):
         # Rendering failures should not block the main flow
         pass
 
-
 # ====================================================
-# Global: show CSV preview and download (if results exist)
+# Global: show CSV preview and download 
 # ====================================================
 detect_output_dir = st.session_state.get("detect_output_dir")
 if isinstance(detect_output_dir, str) and detect_output_dir:
@@ -485,52 +480,49 @@ if isinstance(detect_output_dir, str) and detect_output_dir:
             results_df = pd.read_csv(result_csv_path)
 
             st.markdown("---")
-            st.markdown("### 📊 Detection results preview (from MCP pipeline)")
-            key_cols = [
-                "merged_key",
-                "b_filename",
-                "m_filename",
-                "risk_probability",
-                "prediction",
-                "prediction_label",
-            ]
-            show_cols = [c for c in key_cols if c in results_df.columns]
-            st.dataframe(results_df[show_cols] if show_cols else results_df)
+            with st.expander("📥 Download CSV Results", expanded=True):
+                st.markdown("Download detection results and missing modality samples")
 
-            st.download_button(
-                label="Download detection results CSV",
-                data=results_df.to_csv(index=False, encoding="utf-8-sig"),
-                file_name="detect_result.csv",
-                mime="text/csv",
-            )
+                # Detection results subsection
+                with st.expander("📊 Detection Results", expanded=True):
+                    key_cols = ["merged_key","b_filename","m_filename",
+                        "risk_probability","prediction","prediction_label",]
+                    show_cols = [c for c in key_cols if c in results_df.columns]
+                    st.dataframe(results_df[show_cols] if show_cols else results_df, use_container_width=True)
 
-            # Missing modality samples (if any)
-            missing_csv_path = os.path.join(detect_output_dir, "missing_modality_samples.csv")
-            if os.path.exists(missing_csv_path):
-                try:
-                    missing_df = pd.read_csv(missing_csv_path)
-                except Exception:
-                    missing_df = None
-
-                if missing_df is not None and not missing_df.empty:
-                    st.warning(
-                        "Some samples are missing B or M modality and were not included in prediction. "
-                        "You can download the missing list to review."
+                    st.download_button(
+                        label="📥 Download Detection Results CSV",
+                        data=results_df.to_csv(index=False, encoding="utf-8-sig"),
+                        file_name="detect_result.csv",
+                        mime="text/csv",
+                        use_container_width=True,
                     )
-                    with st.expander(
-                        "Show list of samples with missing modality (downloadable)",
-                        expanded=False,
-                    ):
-                        st.dataframe(missing_df)
-                        st.download_button(
-                            label="Download missing modality CSV",
-                            data=missing_df.to_csv(index=False, encoding="utf-8-sig"),
-                            file_name="missing_modality_samples.csv",
-                            mime="text/csv",
-                        )
+
+                # Missing modality subsection
+                missing_csv_path = os.path.join(detect_output_dir, "missing_modality_samples.csv")
+                if os.path.exists(missing_csv_path):
+                    try:
+                        missing_df = pd.read_csv(missing_csv_path)
+                    except Exception:
+                        missing_df = None
+
+                    if missing_df is not None and not missing_df.empty:
+                        with st.expander("⚠️ Missing Modality Samples", expanded=False):
+                            st.caption(f"Found {len(missing_df)} samples with incomplete B/M pairs (not included in prediction)")
+                            st.dataframe(missing_df, use_container_width=True)
+
+                            st.download_button(
+                                label="📥 Download Missing Modality CSV",
+                                data=missing_df.to_csv(index=False, encoding="utf-8-sig"),
+                                file_name="missing_modality_samples.csv",
+                                mime="text/csv",
+                                use_container_width=True,
+                            )
         except Exception:
             # If reading fails, skip table and downloads
             pass
 
 st.markdown("---")
 st.caption("Developed by AlMSLab")
+
+
