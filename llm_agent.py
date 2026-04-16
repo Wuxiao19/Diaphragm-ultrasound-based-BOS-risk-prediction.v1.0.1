@@ -21,8 +21,8 @@ import time
 # Environment variables & LLM client initialization
 # ============================================================
 
-DEFAULT_LLM_BASE_URL = "https://api.siliconflow.cn/v1"
-DEFAULT_LLM_MODEL = "Qwen/Qwen3-8B"
+DEFAULT_LLM_BASE_URL = "https://api.ofox.ai/v1"
+DEFAULT_LLM_MODEL = "openai/gpt-5.4"
 
 
 def get_llm_client(api_key: str, base_url: str = DEFAULT_LLM_BASE_URL) -> OpenAI:
