@@ -22,7 +22,7 @@ import time
 # ============================================================
 
 DEFAULT_LLM_BASE_URL = "https://api.ofox.ai/v1"
-DEFAULT_LLM_MODEL = "openai/gpt-4o-mini"
+DEFAULT_LLM_MODEL = "z-ai/glm-4.7-flash:free"
 
 
 def get_llm_client(api_key: str, base_url: str = DEFAULT_LLM_BASE_URL) -> OpenAI:
