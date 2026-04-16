@@ -365,7 +365,7 @@ class DetectionPipeline:
             all_probas.append(proba)
 
         avg_proba = np.mean(all_probas, axis=0)
-        predictions = (avg_proba >= 0.5).astype(int)
+        predictions = (avg_proba >= 0.4120).astype(int)
 
         self.log(f"Prediction done: {len(predictions)} samples")
         return avg_proba, predictions
