@@ -394,7 +394,7 @@ class DetectionPipeline:
                 aggregated_rows: list[dict[str, Any]] = []
                 for name, group in results_df.groupby(group_key):
                     avg_proba = group["risk_probability"].mean()
-                    mode_pred = group["prediction"].mode().iloc[0]
+                    mode_pred = 1 if avg_proba >= 0.5 else 0
                     mode_label = "diseased" if mode_pred == 1 else "healthy"
                     aggregated_rows.append(
                         {
