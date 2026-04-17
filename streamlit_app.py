@@ -183,6 +183,39 @@ def parse_optional_number(value: str, cast_type):
     except Exception:
         return None
 
+
+def get_reference_row_for_case(reference_context: dict | None, row: dict | None) -> dict:
+    """Match optional reference factors to a single detection row for display only."""
+    if not isinstance(reference_context, dict) or not isinstance(row, dict):
+        return {}
+
+    mode = reference_context.get("mode")
+    if mode == "single":
+        values = reference_context.get("single_values") or {}
+        return {k: v for k, v in values.items() if v not in (None, "", [])}
+
+    if mode != "folder":
+        return {}
+
+    records = reference_context.get("batch_df") or []
+    merged_key = str(row.get("merged_key") or "").strip()
+    patient_id = str(row.get("patient_id") or "").strip()
+    date = str(row.get("date") or "").strip()
+
+    for record in records:
+        if not isinstance(record, dict):
+            continue
+        record_key = str(record.get("merged_key") or "").strip()
+        record_pid = str(record.get("patient_id") or "").strip()
+        record_date = str(record.get("date") or "").strip()
+
+        if merged_key and record_key and merged_key == record_key:
+            return {k: record.get(k) for k in REFERENCE_FACTOR_COLUMNS if record.get(k) not in (None, "", [])}
+        if patient_id and date and record_pid == patient_id and record_date == date:
+            return {k: record.get(k) for k in REFERENCE_FACTOR_COLUMNS if record.get(k) not in (None, "", [])}
+
+    return {}
+
 # Initialize session_state
 if "detect_output_dir" not in st.session_state:
     st.session_state["detect_output_dir"] = None
@@ -220,23 +253,6 @@ def _render_agent_result(ar: dict) -> None:
                     break
 
     reference_context = st.session_state.get("reference_context")
-    if isinstance(reference_context, dict) and reference_context:
-        st.markdown("### 🧾 Clinical reference factors")
-        mode = reference_context.get("mode")
-        if mode == "single":
-            ref_values = reference_context.get("single_values") or {}
-            ref_df = pd.DataFrame([ref_values]) if ref_values else pd.DataFrame()
-            if not ref_df.empty:
-                st.dataframe(ref_df, use_container_width=True, hide_index=True)
-            else:
-                st.caption("No additional reference factors were provided for this run.")
-        elif mode == "folder":
-            uploaded_df = reference_context.get("batch_df")
-            if isinstance(uploaded_df, list) and uploaded_df:
-                preview_df = build_batch_reference_preview(pd.DataFrame(uploaded_df), detection_summary)
-                st.dataframe(preview_df, use_container_width=True)
-            else:
-                st.caption("No batch reference table was provided for this run.")
 
     if detection_summary:
         def _find_image_path(filename: str) -> str | None:
@@ -300,7 +316,15 @@ def _render_agent_result(ar: dict) -> None:
         high_risk = items_df[items_df["risk_probability"] > 0.6] if not items_df.empty else pd.DataFrame()
         if not high_risk.empty:
             st.warning("High-risk patients detected (risk_probability > 0.6):")
-            st.table(high_risk[["patient_id", "date", "risk_probability"]])
+            high_risk_display = high_risk[["patient_id", "date", "risk_probability"]].copy()
+            if isinstance(reference_context, dict) and reference_context:
+                high_risk_display["Clinical reference factors"] = high_risk.apply(
+                    lambda x: ", ".join(
+                        f"{k}: {v}" for k, v in get_reference_row_for_case(reference_context, x.to_dict()).items()
+                    ) or "-",
+                    axis=1,
+                )
+            st.table(high_risk_display)
 
             with st.expander("High-risk patient images (B/M mode)", expanded=False):
                 for _, row in high_risk.iterrows():
@@ -312,6 +336,12 @@ def _render_agent_result(ar: dict) -> None:
                     st.markdown(
                         f"- Patient {row.get('patient_id')} | {row.get('date')} | risk={float(row.get('risk_probability', 0.0)):.3f}"
                     )
+                    matched_reference = get_reference_row_for_case(reference_context, row.to_dict())
+                    if matched_reference:
+                        st.caption(
+                            "Clinical reference factors used for interpretation: "
+                            + ", ".join(f"{k}={v}" for k, v in matched_reference.items())
+                        )
                     img_cols = st.columns(2)
                     with img_cols[0]:
                         st.caption(f"B-mode: {b_name}" if b_name else "B-mode: (not available)")
@@ -331,7 +361,25 @@ def _render_agent_result(ar: dict) -> None:
                 for rp in detection_summary.get("recheck_patients", []):
                     st.write(f"Patient ID: {rp.get('patient_id')}")
                     st.write("Exam dates: " + ", ".join(rp.get("exam_dates", [])))
-                    st.dataframe(pd.DataFrame(rp.get("visits", [])))
+                    visits_df = pd.DataFrame(rp.get("visits", []))
+                    if not visits_df.empty and isinstance(reference_context, dict) and reference_context:
+                        visits_df = visits_df.copy()
+                        visits_df["Clinical reference factors"] = visits_df.apply(
+                            lambda x: ", ".join(
+                                f"{k}: {v}" for k, v in get_reference_row_for_case(reference_context, x.to_dict()).items()
+                            ) or "-",
+                            axis=1,
+                        )
+                    st.dataframe(visits_df, use_container_width=True)
+
+        if (
+            isinstance(reference_context, dict)
+            and reference_context.get("mode") == "folder"
+            and reference_context.get("batch_df")
+        ):
+            with st.expander("Reference factors matched to predicted cases", expanded=False):
+                preview_df = build_batch_reference_preview(pd.DataFrame(reference_context["batch_df"]), detection_summary)
+                st.dataframe(preview_df, use_container_width=True)
 
         if detection_summary.get("missing_modality_summary"):
             with st.expander("⚠️ Missing modality samples", expanded=False):
@@ -461,8 +509,9 @@ else:
         type=["csv", "xlsx", "xls"],
         key="batch_reference_file",
         help=(
-            "Recommended columns: merged_key or patient_id + date, plus any of "
-            "Sex, Age, BMI, Complication, cGVHD, Time-HSCT."
+            "Supported format: CSV/XLSX with one row per case. Use `merged_key` to match directly, "
+            "or provide both `patient_id` and `date`. Optional reference columns: `Sex`, `Age`, `BMI`, "
+            "`Complication`, `cGVHD`, `Time-HSCT`. Example: merged_key=24-05-01-A001 or patient_id=A001, date=24-05-01."
         ),
     )
     batch_reference_df = pd.DataFrame()
