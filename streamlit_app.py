@@ -9,6 +9,9 @@ from llm_agent import run_llm_agent
 import asyncio
 import json
 
+REFERENCE_FACTOR_COLUMNS = ["Sex", "Age", "BMI", "Complication", "cGVHD", "Time-HSCT"]
+REFERENCE_IDENTIFIER_COLUMNS = ["merged_key", "patient_id", "date"]
+
 
 # ============================================================
 # Streamlit basic page configuration
@@ -86,6 +89,100 @@ def save_uploaded_files_as_folder(uploaded_files, subdir: str) -> str:
             f.write(uf.read())
     return str(target_dir)
 
+
+def load_reference_table(uploaded_file) -> pd.DataFrame:
+    """Load a CSV/XLSX reference table used only for LLM-side interpretation."""
+    suffix = Path(uploaded_file.name).suffix.lower()
+    if suffix == ".csv":
+        return pd.read_csv(uploaded_file)
+    if suffix in {".xlsx", ".xls"}:
+        return pd.read_excel(uploaded_file)
+    raise ValueError("Unsupported file type. Please upload CSV or XLSX.")
+
+
+def normalize_reference_df(df: pd.DataFrame) -> pd.DataFrame:
+    """Normalize uploaded reference-factor columns without changing detection flow."""
+    normalized = df.copy()
+    normalized.columns = [str(c).strip() for c in normalized.columns]
+
+    rename_map = {}
+    for col in normalized.columns:
+        lower_col = col.lower()
+        if lower_col == "sex":
+            rename_map[col] = "Sex"
+        elif lower_col == "age":
+            rename_map[col] = "Age"
+        elif lower_col == "bmi":
+            rename_map[col] = "BMI"
+        elif lower_col == "complication":
+            rename_map[col] = "Complication"
+        elif lower_col == "cgvhd":
+            rename_map[col] = "cGVHD"
+        elif lower_col in {"time-hsct", "time_hsct", "time hsct"}:
+            rename_map[col] = "Time-HSCT"
+        elif lower_col == "merged_key":
+            rename_map[col] = "merged_key"
+        elif lower_col == "patient_id":
+            rename_map[col] = "patient_id"
+        elif lower_col == "date":
+            rename_map[col] = "date"
+
+    normalized = normalized.rename(columns=rename_map)
+    return normalized
+
+
+def build_batch_reference_preview(reference_df: pd.DataFrame, detection_summary: dict | None = None) -> pd.DataFrame:
+    """Prepare a UI preview that aligns uploaded reference factors with prediction results when possible."""
+    if reference_df is None or reference_df.empty:
+        return pd.DataFrame()
+
+    preview_df = reference_df.copy()
+    preferred_cols = [c for c in REFERENCE_IDENTIFIER_COLUMNS + REFERENCE_FACTOR_COLUMNS if c in preview_df.columns]
+    remaining_cols = [c for c in preview_df.columns if c not in preferred_cols]
+    preview_df = preview_df[preferred_cols + remaining_cols]
+
+    if not detection_summary:
+        return preview_df
+
+    items = detection_summary.get("items", [])
+    if not items:
+        return preview_df
+
+    items_df = pd.DataFrame(items)
+    if items_df.empty:
+        return preview_df
+
+    if "merged_key" not in preview_df.columns:
+        if {"patient_id", "date"}.issubset(preview_df.columns):
+            preview_df["merged_key"] = (
+                preview_df["date"].astype(str).str[2:] + "-" + preview_df["patient_id"].astype(str)
+            )
+        else:
+            return preview_df
+
+    if "merged_key" not in items_df.columns:
+        return preview_df
+
+    merged = items_df[["merged_key", "risk_probability", "prediction_label"]].merge(
+        preview_df, on="merged_key", how="left"
+    )
+    cols = ["merged_key", "risk_probability", "prediction_label"]
+    cols += [c for c in REFERENCE_IDENTIFIER_COLUMNS if c in merged.columns and c != "merged_key"]
+    cols += [c for c in REFERENCE_FACTOR_COLUMNS if c in merged.columns]
+    cols += [c for c in merged.columns if c not in cols]
+    return merged[cols]
+
+
+def parse_optional_number(value: str, cast_type):
+    """Convert optional text input to number for LLM-only reference fields."""
+    raw = (value or "").strip()
+    if not raw:
+        return None
+    try:
+        return cast_type(raw)
+    except Exception:
+        return None
+
 # Initialize session_state
 if "detect_output_dir" not in st.session_state:
     st.session_state["detect_output_dir"] = None
@@ -121,6 +218,25 @@ def _render_agent_result(ar: dict) -> None:
                 if isinstance(summary, dict):
                     detection_summary = summary
                     break
+
+    reference_context = st.session_state.get("reference_context")
+    if isinstance(reference_context, dict) and reference_context:
+        st.markdown("### 🧾 Clinical reference factors")
+        mode = reference_context.get("mode")
+        if mode == "single":
+            ref_values = reference_context.get("single_values") or {}
+            ref_df = pd.DataFrame([ref_values]) if ref_values else pd.DataFrame()
+            if not ref_df.empty:
+                st.dataframe(ref_df, use_container_width=True, hide_index=True)
+            else:
+                st.caption("No additional reference factors were provided for this run.")
+        elif mode == "folder":
+            uploaded_df = reference_context.get("batch_df")
+            if isinstance(uploaded_df, list) and uploaded_df:
+                preview_df = build_batch_reference_preview(pd.DataFrame(uploaded_df), detection_summary)
+                st.dataframe(preview_df, use_container_width=True)
+            else:
+                st.caption("No batch reference table was provided for this run.")
 
     if detection_summary:
         def _find_image_path(filename: str) -> str | None:
@@ -306,10 +422,69 @@ with col_m:
         )
 
 # ============================================================
+# Reference factors for LLM-only interpretation
+# ============================================================
+st.markdown("---")
+st.subheader("2. Clinical reference factors for LLM interpretation")
+st.caption(
+    "These factors are optional and are used only as reference information in the LLM suggestion stage. "
+    "They do not change image processing, feature extraction, or risk prediction."
+)
+
+reference_context = None
+
+if input_mode == "single":
+    ref_col1, ref_col2, ref_col3 = st.columns(3)
+    with ref_col1:
+        ref_sex = st.selectbox("Sex", options=["", "Male", "Female"], index=0)
+        ref_age_text = st.text_input("Age")
+    with ref_col2:
+        ref_bmi_text = st.text_input("BMI")
+        ref_complication = st.text_input("Complication")
+    with ref_col3:
+        ref_cgvhd = st.text_input("cGVHD")
+        ref_time_hsct = st.text_input("Time-HSCT")
+
+    single_reference_values = {
+        "Sex": ref_sex or None,
+        "Age": parse_optional_number(ref_age_text, int),
+        "BMI": parse_optional_number(ref_bmi_text, float),
+        "Complication": ref_complication.strip() or None,
+        "cGVHD": ref_cgvhd.strip() or None,
+        "Time-HSCT": ref_time_hsct.strip() or None,
+    }
+    single_reference_values = {k: v for k, v in single_reference_values.items() if v not in (None, "")}
+    reference_context = {"mode": "single", "single_values": single_reference_values}
+else:
+    batch_reference_file = st.file_uploader(
+        "Upload batch reference table (CSV/XLSX)",
+        type=["csv", "xlsx", "xls"],
+        key="batch_reference_file",
+        help=(
+            "Recommended columns: merged_key or patient_id + date, plus any of "
+            "Sex, Age, BMI, Complication, cGVHD, Time-HSCT."
+        ),
+    )
+    batch_reference_df = pd.DataFrame()
+    if batch_reference_file is not None:
+        try:
+            batch_reference_df = normalize_reference_df(load_reference_table(batch_reference_file))
+            st.caption("Uploaded batch reference preview")
+            st.dataframe(batch_reference_df, use_container_width=True)
+        except Exception as e:
+            st.error(f"Failed to read reference table: {e}")
+            batch_reference_df = pd.DataFrame()
+    reference_context = {
+        "mode": "folder",
+        "batch_df": batch_reference_df.to_dict(orient="records") if not batch_reference_df.empty else [],
+        "source_filename": getattr(batch_reference_file, "name", None) if batch_reference_file else None,
+    }
+
+# ============================================================
 # Global: LLM Agent mode
 # ============================================================
 st.markdown("---")
-st.subheader("2. AI detection and interpretation")
+st.subheader("3. AI detection and interpretation")
 st.caption(
     "Note: In this mode, simply upload B-mode and M-mode diaphragm ultrasound images above. "
     "Large Language Model will call the backend detection pipeline (MCP tools), complete feature extraction "
@@ -376,6 +551,7 @@ if st.button("🚀 Run LLM Agent", type="primary"):
 
             # Clear previous results when starting a new agent run
             st.session_state.pop("agent_result", None)
+            st.session_state["reference_context"] = reference_context or {}
 
             with st.spinner("🤖 LLM Agent is working: calling detection tools and generating analysis..."):
                 if b_path_for_agent and m_path_for_agent:
@@ -383,12 +559,15 @@ if st.button("🚀 Run LLM Agent", type="primary"):
                         b_image_path=b_path_for_agent,
                         m_image_path=m_path_for_agent,
                         api_key=final_llm_key,
+                        single_reference_factors=(reference_context or {}).get("single_values"),
                     ))
                 elif b_folder_for_agent and m_folder_for_agent:
                     agent_result = asyncio.run(run_llm_agent(
                         b_folder_path=b_folder_for_agent,
                         m_folder_path=m_folder_for_agent,
                         api_key=final_llm_key,
+                        batch_reference_records=(reference_context or {}).get("batch_df"),
+                        batch_reference_filename=(reference_context or {}).get("source_filename"),
                     ))
                 else:
                     raise ValueError("Unable to determine single or batch mode. Please check your uploads.")
