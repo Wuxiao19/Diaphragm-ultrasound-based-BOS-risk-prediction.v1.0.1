@@ -21,8 +21,9 @@ import time
 # Environment variables & LLM client initialization
 # ============================================================
 
-DEFAULT_LLM_BASE_URL = "https://api.ofox.ai/v1"
-DEFAULT_LLM_MODEL = "z-ai/glm-4.7-flash:free"
+DEFAULT_LLM_BASE_URL = "https://api.siliconflow.cn/v1"
+DEFAULT_LLM_MODEL = "Qwen/Qwen3-8B"
+
 
 def get_llm_client(api_key: str, base_url: str = DEFAULT_LLM_BASE_URL) -> OpenAI:
     return OpenAI(api_key=api_key, base_url=base_url)
@@ -149,7 +150,54 @@ Your tasks:
     - Risk definition thresholds
     - Missing modality samples summary
     - Disclaimer (model output cannot replace doctor's diagnosis)
+
+Additional optional clinical factors may be provided separately, including Sex, Age, BMI, Complication, cGVHD, and Time-HSCT.
+These factors are reference-only context for interpretation and suggestions.
+They do not change tool selection, image-based prediction, or predicted probability.
+If such factors are provided, incorporate them cautiously into the narrative and management suggestions.
+If they are not provided, do not speculate.
 """
+
+
+def _build_reference_context_message(
+    single_reference_factors: Optional[Dict[str, Any]] = None,
+    batch_reference_records: Optional[List[Dict[str, Any]]] = None,
+    batch_reference_filename: Optional[str] = None,
+) -> Optional[str]:
+    """Build a prompt block for optional clinical reference factors."""
+    if single_reference_factors:
+        clean_single = {
+            k: v for k, v in single_reference_factors.items()
+            if v not in (None, "", [])
+        }
+        if clean_single:
+            return (
+                "The following optional clinical reference factors were provided for this single case. "
+                "Use them only as supportive context for the final interpretation and suggestions. "
+                "Do not treat them as model inputs and do not alter the image-based prediction:\n\n"
+                f"{json.dumps(clean_single, ensure_ascii=False, indent=2)}"
+            )
+
+    if batch_reference_records:
+        clean_records = []
+        for row in batch_reference_records:
+            if isinstance(row, dict):
+                clean_row = {k: v for k, v in row.items() if v not in (None, "", [])}
+                if clean_row:
+                    clean_records.append(clean_row)
+        if clean_records:
+            payload = {
+                "source_file": batch_reference_filename,
+                "records": clean_records,
+            }
+            return (
+                "An optional batch clinical reference table was uploaded for interpretation only. "
+                "Use it only when a record can be matched to a case by merged_key or patient/date fields. "
+                "Do not change the prediction outputs based on this table:\n\n"
+                f"{json.dumps(payload, ensure_ascii=False, indent=2)}"
+            )
+
+    return None
 
 
 def _track_detect_output_dir(normalized: Dict[str, Any]) -> None:
@@ -275,6 +323,9 @@ async def run_llm_agent(
     base_url: str = DEFAULT_LLM_BASE_URL,
     model: str = DEFAULT_LLM_MODEL,
     user_query: str = None,
+    single_reference_factors: Optional[Dict[str, Any]] = None,
+    batch_reference_records: Optional[List[Dict[str, Any]]] = None,
+    batch_reference_filename: str = None,
 ) -> Dict[str, Any]:
     """
     Args:
@@ -284,6 +335,9 @@ async def run_llm_agent(
         - base_url: API base URL (default SiliconFlow)
         - model: model name (default Qwen3-8B)
         - user_query: user natural language request (auto-generated)
+        - single_reference_factors: optional manual clinical factors for single-case interpretation only
+        - batch_reference_records: optional clinical table rows for batch interpretation only
+        - batch_reference_filename: uploaded filename for the optional batch reference table
 
     Returns:
         {
@@ -342,6 +396,14 @@ Please:
         {"role": "system", "content": LLM_SYSTEM_PROMPT},
         {"role": "user", "content": user_query},
     ]
+
+    reference_context_message = _build_reference_context_message(
+        single_reference_factors=single_reference_factors,
+        batch_reference_records=batch_reference_records,
+        batch_reference_filename=batch_reference_filename,
+    )
+    if reference_context_message:
+        messages.append({"role": "user", "content": reference_context_message})
 
     # Try to fetch tools dynamically from MCP
     tools = await mcp_list_tools("mcp_tools.py")
@@ -417,13 +479,16 @@ Please:
                 "content": (
                     "Below is a structured summary JSON generated from the tool results,"
                     " including merged_key (exam date + patient ID), recheck patient list,"
-                    " and missing modality statistics:\n\n"
+                    " and missing modality statistics. If optional clinical reference factors"
+                    " were provided earlier, use them only as supplementary interpretation"
+                    " context for the matched case(s):\n\n"
                     f"{summary_str}\n\n"
                     "When producing the final English report, please:\n"
                     "1) Correctly interpret the exam date and patient ID in merged_key;\n"
                     "2) Highlight patients with rechecks and compare risk trends across dates;\n"
                     "3) If missing modality cases exist, mention them explicitly;\n"
-                    "4) Follow the remaining system instructions as stated."
+                    "4) Use optional clinical reference factors only if they are present and match a case;\n"
+                    "5) Follow the remaining system instructions as stated."
                 ),
             }
         )
@@ -485,4 +550,3 @@ Please:
         print("=" * 60, file=sys.stderr, flush=True)
 
     return result_obj
-
