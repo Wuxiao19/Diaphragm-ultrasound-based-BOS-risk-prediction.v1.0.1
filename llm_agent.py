@@ -154,7 +154,8 @@ Your tasks:
 Additional optional clinical factors may be provided separately, including Sex, Age, BMI, Complication, cGVHD, and Time-HSCT.
 These factors are reference-only context for interpretation and suggestions.
 They do not change tool selection, image-based prediction, or predicted probability.
-If such factors are provided, incorporate them cautiously into the narrative and management suggestions.
+If such factors are provided, incorporate them cautiously into the high-risk patient analysis, high-risk patient suggestions,
+recheck patient analysis, and recheck patient suggestions when relevant.
 If they are not provided, do not speculate.
 """
 
@@ -173,7 +174,7 @@ def _build_reference_context_message(
         if clean_single:
             return (
                 "The following optional clinical reference factors were provided for this single case. "
-                "Use them only as supportive context for the final interpretation and suggestions. "
+                "Use them only as supportive context within the high-risk or recheck-related analysis and suggestions when relevant. "
                 "Do not treat them as model inputs and do not alter the image-based prediction:\n\n"
                 f"{json.dumps(clean_single, ensure_ascii=False, indent=2)}"
             )
@@ -192,7 +193,8 @@ def _build_reference_context_message(
             }
             return (
                 "An optional batch clinical reference table was uploaded for interpretation only. "
-                "Use it only when a record can be matched to a case by merged_key or patient/date fields. "
+                "Use it only when a record can be matched to a case by merged_key or patient/date fields, "
+                "and integrate it into high-risk or recheck-related analysis and suggestions when relevant. "
                 "Do not change the prediction outputs based on this table:\n\n"
                 f"{json.dumps(payload, ensure_ascii=False, indent=2)}"
             )
@@ -488,7 +490,8 @@ Please:
                     "2) Highlight patients with rechecks and compare risk trends across dates;\n"
                     "3) If missing modality cases exist, mention them explicitly;\n"
                     "4) Use optional clinical reference factors only if they are present and match a case;\n"
-                    "5) Follow the remaining system instructions as stated."
+                    "5) Do not create a separate section for clinical factors; instead blend them into the high-risk or recheck-related analysis and suggestions;\n"
+                    "6) Follow the remaining system instructions as stated."
                 ),
             }
         )
