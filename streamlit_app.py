@@ -314,17 +314,6 @@ def _render_agent_result(ar: dict) -> None:
 
         high_risk = items_df[items_df["risk_probability"] > 0.6] if not items_df.empty else pd.DataFrame()
         if not high_risk.empty:
-            st.warning("High-risk patients detected (risk_probability > 0.6):")
-            high_risk_display = high_risk[["patient_id", "date", "risk_probability"]].copy()
-            if isinstance(reference_context, dict) and reference_context:
-                high_risk_display["Clinical reference factors"] = high_risk.apply(
-                    lambda x: ", ".join(
-                        f"{k}: {v}" for k, v in get_reference_row_for_case(reference_context, x.to_dict()).items()
-                    ) or "-",
-                    axis=1,
-                )
-            st.table(high_risk_display)
-
             with st.expander("High-risk patient images (B/M mode)", expanded=False):
                 for _, row in high_risk.iterrows():
                     b_name = row.get("b_filename") or ""
@@ -370,15 +359,6 @@ def _render_agent_result(ar: dict) -> None:
                             axis=1,
                         )
                     st.dataframe(visits_df, use_container_width=True)
-
-        if (
-            isinstance(reference_context, dict)
-            and reference_context.get("mode") == "folder"
-            and reference_context.get("batch_df")
-        ):
-            with st.expander("Reference factors matched to predicted cases", expanded=False):
-                preview_df = build_batch_reference_preview(pd.DataFrame(reference_context["batch_df"]), detection_summary)
-                st.dataframe(preview_df, use_container_width=True)
 
         if detection_summary.get("missing_modality_summary"):
             with st.expander("⚠️ Missing modality samples", expanded=False):
