@@ -522,7 +522,7 @@ else:
         try:
             batch_reference_df = normalize_reference_df(load_reference_table(batch_reference_file))
             st.caption("Uploaded batch reference preview")
-            st.dataframe(batch_reference_df, use_container_width=True)
+            st.dataframe(batch_reference_df, use_container_width=True, expanded=False)
         except Exception as e:
             st.error(f"Failed to read reference table: {e}")
             batch_reference_df = pd.DataFrame()
