@@ -14,4 +14,4 @@ fastmcp
 pydantic
 openai
 python-dotenv
-
+openpyxl
