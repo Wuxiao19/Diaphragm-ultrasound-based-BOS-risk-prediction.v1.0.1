@@ -23,15 +23,14 @@ st.set_page_config(
     layout="wide",
 )
 
-st.title("Diaphragm Ultrasound Analysis System")
-st.markdown(
-    """  
-Upload **B-mode** and **M-mode** diaphragm ultrasound images
-for one patient (single exam) or for multiple patients (batch exams).
-
-The system will automatically perform: feature extraction → feature reduction
-→ feature fusion → ExtraTrees-based binary classification.
-"""
+st.title(
+    "Diaphragm Ultrasound Analysis System",
+    help=(
+        "Upload B-mode and M-mode diaphragm ultrasound images for one patient (single exam) "
+        "or for multiple patients (batch exams).\n\n"
+        "The system will automatically perform: feature extraction -> feature reduction "
+        "-> feature fusion -> ExtraTrees-based binary classification."
+    ),
 )
 
 # ============================================================
@@ -426,11 +425,13 @@ input_mode = st.sidebar.radio(
 # Main area: file upload
 # ============================================================
 
-st.subheader("1. Upload input data")
-st.caption(
-    "File naming rule: each filename must start with `YY-MM-DD-<ID>`, "
-    "e.g. `24-05-01-A001_xxx.png`. The same patient ID on the same date "
-    "will be merged as one exam."
+st.subheader(
+    "1. Upload input data",
+    help=(
+        "File naming rule: each filename must start with `YY-MM-DD-<ID>`, "
+        "e.g. `24-05-01-A001_xxx.png`. The same patient ID on the same date "
+        "will be merged as one exam."
+    ),
 )
 
 col_b, col_m = st.columns(2)
@@ -473,10 +474,12 @@ with col_m:
 # Reference factors for LLM-only interpretation
 # ============================================================
 st.markdown("---")
-st.subheader("2. Clinical reference factors for LLM interpretation")
-st.caption(
-    "These factors are optional and are used only as reference information in the LLM suggestion stage. "
-    "They do not change image processing, feature extraction, or risk prediction."
+st.subheader(
+    "2. Clinical reference factors for LLM interpretation",
+    help=(
+        "These factors are optional and are used only as reference information in the LLM suggestion stage. "
+        "They do not change image processing, feature extraction, or risk prediction."
+    ),
 )
 
 reference_context = None
@@ -533,11 +536,13 @@ else:
 # Global: LLM Agent mode
 # ============================================================
 st.markdown("---")
-st.subheader("3. AI detection and interpretation")
-st.caption(
-    "Note: In this mode, simply upload B-mode and M-mode diaphragm ultrasound images above. "
-    "Large Language Model will call the backend detection pipeline (MCP tools), complete feature extraction "
-    "and risk prediction, then generate an English interpretation. This cannot replace a doctor's diagnosis."
+st.subheader(
+    "3. AI detection and interpretation",
+    help=(
+        "Note: In this mode, simply upload B-mode and M-mode diaphragm ultrasound images above. "
+        "Large Language Model will call the backend detection pipeline (MCP tools), complete feature extraction "
+        "and risk prediction, then generate an English interpretation. This cannot replace a doctor's diagnosis."
+    ),
 )
 
 llm_secret_key = ""
