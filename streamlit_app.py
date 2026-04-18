@@ -2,6 +2,7 @@ import os
 from pathlib import Path
 import shutil
 import uuid
+import re
 import numpy as np
 import pandas as pd
 import streamlit as st
@@ -127,7 +128,61 @@ def normalize_reference_df(df: pd.DataFrame) -> pd.DataFrame:
             rename_map[col] = "date"
 
     normalized = normalized.rename(columns=rename_map)
+    if "date" in normalized.columns:
+        normalized["date"] = normalized["date"].apply(normalize_reference_date_value)
+    if "patient_id" in normalized.columns:
+        normalized["patient_id"] = normalized["patient_id"].apply(
+            lambda v: str(v).strip() if pd.notna(v) else None
+        )
+    if "merged_key" in normalized.columns:
+        normalized["merged_key"] = normalized["merged_key"].apply(
+            lambda v: str(v).strip() if pd.notna(v) else None
+        )
+    elif {"patient_id", "date"}.issubset(normalized.columns):
+        normalized["merged_key"] = normalized.apply(
+            lambda row: (
+                f"{row['date']}-{row['patient_id']}"
+                if row.get("date") and row.get("patient_id")
+                else None
+            ),
+            axis=1,
+        )
     return normalized
+
+
+def normalize_reference_date_value(value):
+    """Normalize reference-table dates to YY-MM-DD for matching and prompt use."""
+    if pd.isna(value):
+        return None
+    if isinstance(value, (pd.Timestamp, np.datetime64)):
+        return pd.Timestamp(value).strftime("%y-%m-%d")
+
+    text = str(value).strip()
+    if not text:
+        return None
+    if re.fullmatch(r"\d{2}-\d{2}-\d{2}", text):
+        return text
+    if re.fullmatch(r"\d{4}[-/]\d{1,2}[-/]\d{1,2}(?:\s+\d{1,2}:\d{2}:\d{2})?", text):
+        return pd.to_datetime(text).strftime("%y-%m-%d")
+    return text
+
+
+def serialize_reference_records(df: pd.DataFrame) -> list[dict]:
+    """Convert reference DataFrame to JSON-safe records for agent context."""
+    records = []
+    for row in df.to_dict(orient="records"):
+        clean_row = {}
+        for key, value in row.items():
+            if pd.isna(value):
+                clean_row[key] = None
+            elif key == "date":
+                clean_row[key] = normalize_reference_date_value(value)
+            elif isinstance(value, np.generic):
+                clean_row[key] = value.item()
+            else:
+                clean_row[key] = value
+        records.append(clean_row)
+    return records
 
 
 def build_batch_reference_preview(reference_df: pd.DataFrame, detection_summary: dict | None = None) -> pd.DataFrame:
@@ -154,7 +209,7 @@ def build_batch_reference_preview(reference_df: pd.DataFrame, detection_summary:
     if "merged_key" not in preview_df.columns:
         if {"patient_id", "date"}.issubset(preview_df.columns):
             preview_df["merged_key"] = (
-                preview_df["date"].astype(str).str[2:] + "-" + preview_df["patient_id"].astype(str)
+                preview_df["date"].astype(str) + "-" + preview_df["patient_id"].astype(str)
             )
         else:
             return preview_df
@@ -199,14 +254,14 @@ def get_reference_row_for_case(reference_context: dict | None, row: dict | None)
     records = reference_context.get("batch_df") or []
     merged_key = str(row.get("merged_key") or "").strip()
     patient_id = str(row.get("patient_id") or "").strip()
-    date = str(row.get("date") or "").strip()
+    date = normalize_reference_date_value(row.get("date"))
 
     for record in records:
         if not isinstance(record, dict):
             continue
         record_key = str(record.get("merged_key") or "").strip()
         record_pid = str(record.get("patient_id") or "").strip()
-        record_date = str(record.get("date") or "").strip()
+        record_date = normalize_reference_date_value(record.get("date"))
 
         if merged_key and record_key and merged_key == record_key:
             return {k: record.get(k) for k in REFERENCE_FACTOR_COLUMNS if record.get(k) not in (None, "", [])}
@@ -508,7 +563,7 @@ else:
             batch_reference_df = pd.DataFrame()
     reference_context = {
         "mode": "folder",
-        "batch_df": batch_reference_df.to_dict(orient="records") if not batch_reference_df.empty else [],
+        "batch_df": serialize_reference_records(batch_reference_df) if not batch_reference_df.empty else [],
         "source_filename": getattr(batch_reference_file, "name", None) if batch_reference_file else None,
     }
 
