@@ -210,11 +210,9 @@ def get_reference_row_for_case(reference_context: dict | None, row: dict | None)
     return {}
 
 # Initialize session_state
-if "detect_output_dir" not in st.session_state:
-    st.session_state["detect_output_dir"] = None
+st.session_state.setdefault("detect_output_dir", None)
 
-
-def _on_file_uploader_change(mode: str) -> None:
+def _on_file_uploader_change() -> None:
     """Clear previous detection results when the user uploads new files."""
     st.session_state.pop("agent_result", None)
     st.session_state["detect_output_dir"] = None
@@ -406,7 +404,7 @@ with col_b:
             "Upload B-mode image (single)",
             type=["jpg", "jpeg", "png", "bmp"],
             key="b_image_single",
-            on_change=lambda: _on_file_uploader_change("single"),
+            on_change=_on_file_uploader_change,
         )
     else:
         b_files = st.file_uploader(
@@ -414,7 +412,7 @@ with col_b:
             type=["jpg", "jpeg", "png", "bmp"],
             accept_multiple_files=True,
             key="b_image_folder",
-            on_change=lambda: _on_file_uploader_change("folder"),
+            on_change=_on_file_uploader_change,
         )
 
 with col_m:
@@ -423,7 +421,7 @@ with col_m:
             "Upload M-mode image (single)",
             type=["jpg", "jpeg", "png", "bmp"],
             key="m_image_single",
-            on_change=lambda: _on_file_uploader_change("single"),
+            on_change=_on_file_uploader_change,
         )
     else:
         m_files = st.file_uploader(
@@ -431,7 +429,7 @@ with col_m:
             type=["jpg", "jpeg", "png", "bmp"],
             accept_multiple_files=True,
             key="m_image_folder",
-            on_change=lambda: _on_file_uploader_change("folder"),
+            on_change=_on_file_uploader_change,
         )
 
 # ============================================================
@@ -532,7 +530,7 @@ if st.button("🚀 Run LLM Agent", type="primary"):
                 st.error(f"Failed to clean previous uploaded inputs: {e}")
 
             if input_mode == "single":
-                if not ("b_file" in locals() and b_file) or not ("m_file" in locals() and m_file):
+                if not b_file or not m_file:
                     st.error("Please upload one B-mode and one M-mode image above.")
                     st.stop()
 
@@ -545,10 +543,10 @@ if st.button("🚀 Run LLM Agent", type="primary"):
                 m_path_for_agent = str(Path(m_abs).resolve())
 
             else:  # folder mode
-                if not ("b_files" in locals() and b_files) or len(b_files) == 0:
+                if not b_files:
                     st.error("Please upload at least one B-mode image (batch mode).")
                     st.stop()
-                if not ("m_files" in locals() and m_files) or len(m_files) == 0:
+                if not m_files:
                     st.error("Please upload at least one M-mode image (batch mode).")
                     st.stop()
 
