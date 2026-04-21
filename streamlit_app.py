@@ -11,8 +11,6 @@ import asyncio
 import json
 
 REFERENCE_FACTOR_COLUMNS = ["Sex", "Age", "BMI", "Complication", "cGVHD", "Time-HSCT"]
-REFERENCE_IDENTIFIER_COLUMNS = ["merged_key", "patient_id", "date"]
-
 
 # ============================================================
 # Streamlit basic page configuration
@@ -101,7 +99,7 @@ def load_reference_table(uploaded_file) -> pd.DataFrame:
 
 
 def normalize_reference_df(df: pd.DataFrame) -> pd.DataFrame:
-    """Normalize uploaded reference-factor columns without changing detection flow."""
+    """Normalize uploaded reference-factor columns."""
     normalized = df.copy()
     normalized.columns = [str(c).strip() for c in normalized.columns]
 
@@ -134,11 +132,7 @@ def normalize_reference_df(df: pd.DataFrame) -> pd.DataFrame:
         normalized["patient_id"] = normalized["patient_id"].apply(
             lambda v: str(v).strip() if pd.notna(v) else None
         )
-    if "merged_key" in normalized.columns:
-        normalized["merged_key"] = normalized["merged_key"].apply(
-            lambda v: str(v).strip() if pd.notna(v) else None
-        )
-    elif {"patient_id", "date"}.issubset(normalized.columns):
+    if {"patient_id", "date"}.issubset(normalized.columns):
         normalized["merged_key"] = normalized.apply(
             lambda row: (
                 f"{row['date']}-{row['patient_id']}"
@@ -175,57 +169,12 @@ def serialize_reference_records(df: pd.DataFrame) -> list[dict]:
         for key, value in row.items():
             if pd.isna(value):
                 clean_row[key] = None
-            elif key == "date":
-                clean_row[key] = normalize_reference_date_value(value)
             elif isinstance(value, np.generic):
                 clean_row[key] = value.item()
             else:
                 clean_row[key] = value
         records.append(clean_row)
     return records
-
-
-def build_batch_reference_preview(reference_df: pd.DataFrame, detection_summary: dict | None = None) -> pd.DataFrame:
-    """Prepare a UI preview that aligns uploaded reference factors with prediction results when possible."""
-    if reference_df is None or reference_df.empty:
-        return pd.DataFrame()
-
-    preview_df = reference_df.copy()
-    preferred_cols = [c for c in REFERENCE_IDENTIFIER_COLUMNS + REFERENCE_FACTOR_COLUMNS if c in preview_df.columns]
-    remaining_cols = [c for c in preview_df.columns if c not in preferred_cols]
-    preview_df = preview_df[preferred_cols + remaining_cols]
-
-    if not detection_summary:
-        return preview_df
-
-    items = detection_summary.get("items", [])
-    if not items:
-        return preview_df
-
-    items_df = pd.DataFrame(items)
-    if items_df.empty:
-        return preview_df
-
-    if "merged_key" not in preview_df.columns:
-        if {"patient_id", "date"}.issubset(preview_df.columns):
-            preview_df["merged_key"] = (
-                preview_df["date"].astype(str) + "-" + preview_df["patient_id"].astype(str)
-            )
-        else:
-            return preview_df
-
-    if "merged_key" not in items_df.columns:
-        return preview_df
-
-    merged = items_df[["merged_key", "risk_probability", "prediction_label"]].merge(
-        preview_df, on="merged_key", how="left"
-    )
-    cols = ["merged_key", "risk_probability", "prediction_label"]
-    cols += [c for c in REFERENCE_IDENTIFIER_COLUMNS if c in merged.columns and c != "merged_key"]
-    cols += [c for c in REFERENCE_FACTOR_COLUMNS if c in merged.columns]
-    cols += [c for c in merged.columns if c not in cols]
-    return merged[cols]
-
 
 def parse_optional_number(value: str, cast_type):
     """Convert optional text input to number for LLM-only reference fields."""
@@ -236,7 +185,6 @@ def parse_optional_number(value: str, cast_type):
         return cast_type(raw)
     except Exception:
         return None
-
 
 def get_reference_row_for_case(reference_context: dict | None, row: dict | None) -> dict:
     """Match optional reference factors to a single detection row for display only."""
@@ -343,13 +291,6 @@ def _render_agent_result(ar: dict) -> None:
         items_df = pd.DataFrame(detection_summary.get("items", []))
         if not items_df.empty:
             display_df = items_df[["patient_id", "date", "risk_probability"]].copy()
-            display_df = display_df.rename(
-                columns={
-                    "patient_id": "Patient_id",
-                    "date": "date",
-                    "risk_probability": "risk_probability",
-                }
-            )
 
             def _risk_color(val):
                 try:
@@ -784,5 +725,4 @@ if isinstance(detect_output_dir, str) and detect_output_dir:
 
 st.markdown("---")
 st.caption("Developed by AIMSLab")
-
 
