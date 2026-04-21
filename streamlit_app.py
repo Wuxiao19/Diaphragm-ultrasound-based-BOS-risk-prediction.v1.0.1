@@ -16,7 +16,6 @@ llm_secret_key = st.secrets.get("llm_api_key", "")
 # ============================================================
 # Streamlit basic page configuration
 # ============================================================
-
 st.set_page_config(
     page_title="Diaphragm Ultrasound Analysis System",
     page_icon="🩺",
@@ -36,7 +35,6 @@ st.title(
 # ============================================================
 # Helper functions: handle uploaded files and temp dirs
 # ============================================================
-
 def ensure_upload_dir() -> Path:
     """Ensure base directory for temporary uploaded files exists."""
     base_dir = Path.cwd() / "uploaded_inputs"
@@ -226,8 +224,8 @@ def render_image_uploader(label_prefix: str, input_mode: str):
         on_change=_on_file_uploader_change,
     )
 
-# Sanitize agent_result into a serializable structure for session_state, to avoid non-serializable objects (Path, DataFrame, handles) on rerun.
 def _sanitize_agent_result(ar):
+    """Sanitize agent_result into a serializable structure for session_state, to avoid non-serializable objects (Path, DataFrame, handles) on rerun"""
     if not isinstance(ar, dict):
         return ar
     out = {}
@@ -407,7 +405,6 @@ def _render_agent_result(ar: dict) -> None:
 # ============================================================
 # Sidebar: input mode
 # ============================================================
-
 st.sidebar.header("Input settings")
 
 input_mode = st.sidebar.radio(
@@ -418,11 +415,9 @@ input_mode = st.sidebar.radio(
     else "Batch patients (multiple B- and M-mode images)",
 )
 
-
 # ============================================================
 # Main area: file upload
 # ============================================================
-
 st.subheader(
     "1. Upload input data",
     help=(
