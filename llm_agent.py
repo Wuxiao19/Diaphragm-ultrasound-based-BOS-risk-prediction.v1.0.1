@@ -160,7 +160,6 @@ recheck patient analysis, and recheck patient suggestions when relevant.
 If they are not provided, do not speculate.
 """
 
-
 def _build_reference_context_message(
     single_reference_factors: Optional[Dict[str, Any]] = None,
     batch_reference_records: Optional[List[Dict[str, Any]]] = None,
@@ -188,10 +187,7 @@ def _build_reference_context_message(
                 if clean_row:
                     clean_records.append(clean_row)
         if clean_records:
-            payload = {
-                "source_file": batch_reference_filename,
-                "records": clean_records,
-            }
+            payload = {"source_file": batch_reference_filename,"records": clean_records,}
             return (
                 "An optional batch clinical reference table was uploaded for interpretation only. "
                 "Use it only when a record can be matched to a case by merged_key or patient/date fields, "
@@ -330,25 +326,7 @@ async def run_llm_agent(
     batch_reference_records: Optional[List[Dict[str, Any]]] = None,
     batch_reference_filename: str = None,
 ) -> Dict[str, Any]:
-    """
-    Args:
-        - b_image_path, m_image_path: image paths for a single exam
-        - b_folder_path, m_folder_path: folder paths for batch exams
-        - api_key: LLM API key
-        - base_url: API base URL (default SiliconFlow)
-        - model: model name (default Qwen3-8B)
-        - user_query: user natural language request (auto-generated)
-        - single_reference_factors: optional manual clinical factors for single-case interpretation only
-        - batch_reference_records: optional clinical table rows for batch interpretation only
-        - batch_reference_filename: uploaded filename for the optional batch reference table
 
-    Returns:
-        {
-            "tool_calls": [...],  # tool call records
-            "tool_results": {...},  # tool results
-            "final_response": "...",  # LLM final response
-        }
-    """
     if not api_key:
         raise ValueError("api_key is required")
 
