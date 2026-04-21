@@ -783,6 +783,6 @@ if isinstance(detect_output_dir, str) and detect_output_dir:
             pass
 
 st.markdown("---")
-st.caption("Developed by AlMSLab")
+st.caption("Developed by AIMSLab")
 
 
