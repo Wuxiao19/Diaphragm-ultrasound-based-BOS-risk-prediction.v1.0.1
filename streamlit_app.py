@@ -11,6 +11,7 @@ import asyncio
 import json
 
 REFERENCE_FACTOR_COLUMNS = ["Sex", "Age", "BMI", "Complication", "cGVHD", "Time-HSCT"]
+llm_secret_key = st.secrets.get("llm_api_key", "")
 
 # ============================================================
 # Streamlit basic page configuration
@@ -519,12 +520,6 @@ st.subheader(
     ),
 )
 
-llm_secret_key = ""
-try:
-    llm_secret_key = st.secrets.get("llm_api_key", "")
-except Exception:
-    llm_secret_key = ""
-
 st.info("🤖 **Agent mode**: directly use your uploaded images, call backend detection tools, and generate a full analysis.")
 
 if st.button("🚀 Run LLM Agent", type="primary"):
@@ -644,7 +639,7 @@ if st.button("🚀 Run LLM Agent", type="primary"):
             # ====================================================
             detect_output_dir = None
             ar = st.session_state.get("agent_result")
-            for name, res in (ar.get("tool_results", {}) if ar else {}).items():
+            for _, res in (ar.get("tool_results", {}) if ar else {}).items():
                 if isinstance(res, dict) and "detect_output_dir" in res:
                     detect_output_dir = res["detect_output_dir"]
                     break
