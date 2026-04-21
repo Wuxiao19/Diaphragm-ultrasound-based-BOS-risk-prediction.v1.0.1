@@ -174,7 +174,8 @@ def parse_optional_number(value: str, cast_type):
         return None
     try:
         return cast_type(raw)
-    except Exception:
+    except Exception as e:
+        st.warning(f"Invalid numeric input: {e}")
         return None
 
 def get_reference_row_for_case(reference_context: dict | None, row: dict | None) -> dict:
@@ -606,7 +607,6 @@ if st.button("🚀 Run LLM Agent", type="primary"):
                     detect_output_dir = res["detect_output_dir"]
                     break
             
-            # Save to session_state so download buttons work across reruns
             if detect_output_dir:
                 st.session_state["detect_output_dir"] = detect_output_dir
 
@@ -658,9 +658,7 @@ if isinstance(detect_output_dir, str) and detect_output_dir:
                     missing_df = pd.read_csv(missing_csv_path)
                     if not missing_df.empty:
                         with st.expander("⚠️ Missing Modality Samples", expanded=False):
-                            st.caption(
-                                f"Found {len(missing_df)} samples with incomplete B/M pairs (not included in prediction)"
-                            )
+                            st.caption(f"Found {len(missing_df)} samples with incomplete B/M pairs (not included in prediction)")
                             st.dataframe(missing_df, use_container_width=True)
                             st.download_button(
                                 label="📥 Download Missing Modality CSV",
@@ -677,3 +675,4 @@ if isinstance(detect_output_dir, str) and detect_output_dir:
 
 st.markdown("---")
 st.caption("Developed by AIMSLab")
+
