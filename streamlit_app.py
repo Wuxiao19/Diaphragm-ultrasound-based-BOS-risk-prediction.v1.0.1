@@ -209,6 +209,41 @@ def get_reference_row_for_case(reference_context: dict | None, row: dict | None)
 
     return {}
 
+def render_image_uploader(label_prefix: str, input_mode: str):
+    if input_mode == "single":
+        return st.file_uploader(
+            f"Upload {label_prefix}-mode image (single)",
+            type=["jpg", "jpeg", "png", "bmp"],
+            key=f"{label_prefix.lower()}_image_single",
+            on_change=_on_file_uploader_change,
+        )
+    return st.file_uploader(
+        f"Upload {label_prefix}-mode images (multiple files allowed, treated as one folder)",
+        type=["jpg", "jpeg", "png", "bmp"],
+        accept_multiple_files=True,
+        key=f"{label_prefix.lower()}_image_folder",
+        on_change=_on_file_uploader_change,
+    )
+
+# Sanitize agent_result into a serializable structure for session_state, to avoid non-serializable objects (Path, DataFrame, handles) on rerun.
+def _sanitize_agent_result(ar):
+    if not isinstance(ar, dict):
+        return ar
+    out = {}
+    for k, v in ar.items():
+        try:
+            if hasattr(v, "to_dict") and callable(getattr(v, "to_dict")):
+                out[k] = v.to_dict()
+            elif isinstance(v, (np.integer, np.floating)):
+                out[k] = v.item()
+            elif isinstance(v, (list, tuple)):
+                out[k] = [e.to_dict() if hasattr(e, "to_dict") else e for e in v]
+            else:
+                out[k] = v
+        except Exception:
+            out[k] = json.loads(json.dumps(v, default=str))
+    return out
+
 # Initialize session_state
 st.session_state.setdefault("detect_output_dir", None)
 
@@ -399,38 +434,14 @@ st.subheader(
 col_b, col_m = st.columns(2)
 
 with col_b:
-    if input_mode == "single":
-        b_file = st.file_uploader(
-            "Upload B-mode image (single)",
-            type=["jpg", "jpeg", "png", "bmp"],
-            key="b_image_single",
-            on_change=_on_file_uploader_change,
-        )
-    else:
-        b_files = st.file_uploader(
-            "Upload B-mode images (multiple files allowed, treated as one folder)",
-            type=["jpg", "jpeg", "png", "bmp"],
-            accept_multiple_files=True,
-            key="b_image_folder",
-            on_change=_on_file_uploader_change,
-        )
-
+    b_data = render_image_uploader("B", input_mode)
 with col_m:
-    if input_mode == "single":
-        m_file = st.file_uploader(
-            "Upload M-mode image (single)",
-            type=["jpg", "jpeg", "png", "bmp"],
-            key="m_image_single",
-            on_change=_on_file_uploader_change,
-        )
-    else:
-        m_files = st.file_uploader(
-            "Upload M-mode images (multiple files allowed, treated as one folder)",
-            type=["jpg", "jpeg", "png", "bmp"],
-            accept_multiple_files=True,
-            key="m_image_folder",
-            on_change=_on_file_uploader_change,
-        )
+    m_data = render_image_uploader("M", input_mode)
+
+if input_mode == "single":
+    b_file, m_file = b_data, m_data
+else:
+    b_files, m_files = b_data, m_data
 
 # ============================================================
 # Reference factors for LLM-only interpretation
@@ -582,38 +593,7 @@ if st.button("🚀 Run LLM Agent", type="primary"):
 
             st.success("✅ LLM Agent analysis complete!")
 
-            # Sanitize agent_result into a serializable structure for session_state, to avoid non-serializable objects (Path, DataFrame, handles) on rerun.
-            def _sanitize_agent_result(ar):
-                if not isinstance(ar, dict):
-                    return ar
-                out = {}
-                for k, v in ar.items():
-                    try:
-                        # pandas DataFrame -> dict
-                        if hasattr(v, "to_dict") and callable(getattr(v, "to_dict")):
-                            out[k] = v.to_dict()
-                        # numpy types
-                        elif isinstance(v, (np.integer, np.floating)):
-                            out[k] = v.item()
-                        elif isinstance(v, (list, tuple)):
-                            new_list = []
-                            for e in v:
-                                if hasattr(e, "to_dict"):
-                                    new_list.append(e.to_dict())
-                                else:
-                                    new_list.append(e)
-                            out[k] = new_list
-                        else:
-                            out[k] = v
-                    except Exception:
-                        # Fallback: convert to string
-                        out[k] = json.loads(json.dumps(v, default=str))
-
-                return out
-
             sanitized_agent_result = _sanitize_agent_result(agent_result)
-
-            # Persist agent result in session_state so downloads won't clear the view
             st.session_state["agent_result"] = sanitized_agent_result
 
             # ====================================================
@@ -682,7 +662,6 @@ if isinstance(detect_output_dir, str) and detect_output_dir:
                                 f"Found {len(missing_df)} samples with incomplete B/M pairs (not included in prediction)"
                             )
                             st.dataframe(missing_df, use_container_width=True)
-
                             st.download_button(
                                 label="📥 Download Missing Modality CSV",
                                 data=missing_df.to_csv(index=False, encoding="utf-8-sig"),
@@ -698,4 +677,3 @@ if isinstance(detect_output_dir, str) and detect_output_dir:
 
 st.markdown("---")
 st.caption("Developed by AIMSLab")
-
