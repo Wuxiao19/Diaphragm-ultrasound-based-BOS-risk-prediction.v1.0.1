@@ -52,17 +52,12 @@ def _clear_dir(path: Path) -> None:
 
 
 def _new_run_subdir(prefix: str) -> str:
-    """
-    Create a unique sub-directory name for this run,
-    so that different users/runs do not interfere with each other.
-    """
+    """Create a unique sub-directory name for this run, so that different users/runs do not interfere with each other."""
     return f"{prefix}_{uuid.uuid4().hex[:12]}"
 
 
 def save_uploaded_file(uploaded_file, subdir: str) -> str:
-    """
-    Save a single uploaded file to disk and return its local path.
-    """
+    """Save a single uploaded file to disk and return its local path."""
     upload_root = ensure_upload_dir()
     target_dir = upload_root / subdir
     target_dir.mkdir(parents=True, exist_ok=True)
@@ -74,10 +69,7 @@ def save_uploaded_file(uploaded_file, subdir: str) -> str:
 
 
 def save_uploaded_files_as_folder(uploaded_files, subdir: str) -> str:
-    """
-    Save multiple uploaded files to one sub-directory,
-    simulating a "folder" input. Return that directory path.
-    """
+    """Save multiple uploaded files to one sub-directory,simulating a "folder" input. Return that directory path."""
     upload_root = ensure_upload_dir()
     target_dir = upload_root / subdir
     _clear_dir(target_dir)
@@ -130,9 +122,7 @@ def normalize_reference_df(df: pd.DataFrame) -> pd.DataFrame:
     if "date" in normalized.columns:
         normalized["date"] = normalized["date"].apply(normalize_reference_date_value)
     if "patient_id" in normalized.columns:
-        normalized["patient_id"] = normalized["patient_id"].apply(
-            lambda v: str(v).strip() if pd.notna(v) else None
-        )
+        normalized["patient_id"] = normalized["patient_id"].apply(lambda v: str(v).strip() if pd.notna(v) else None)
     if {"patient_id", "date"}.issubset(normalized.columns):
         normalized["merged_key"] = normalized.apply(
             lambda row: (
@@ -231,10 +221,7 @@ def _on_file_uploader_change(mode: str) -> None:
 
 
 def _render_agent_result(ar: dict) -> None:
-    """Render agent result stored in session_state or returned from run_llm_agent.
-
-    This is separated so the UI remains visible across Streamlit reruns 
-    """
+    """Render agent result stored in session_state or returned from run_llm_agent."""
     if not ar:
         return
 
@@ -597,8 +584,7 @@ if st.button("🚀 Run LLM Agent", type="primary"):
 
             st.success("✅ LLM Agent analysis complete!")
 
-            # Sanitize agent_result into a serializable structure for session_state
-            # to avoid non-serializable objects (Path, DataFrame, handles) on rerun.
+            # Sanitize agent_result into a serializable structure for session_state, to avoid non-serializable objects (Path, DataFrame, handles) on rerun.
             def _sanitize_agent_result(ar):
                 if not isinstance(ar, dict):
                     return ar
@@ -623,10 +609,8 @@ if st.button("🚀 Run LLM Agent", type="primary"):
                             out[k] = v
                     except Exception:
                         # Fallback: convert to string
-                        try:
-                            out[k] = json.loads(json.dumps(v, default=str))
-                        except Exception:
-                            out[k] = str(v)
+                        out[k] = json.loads(json.dumps(v, default=str))
+
                 return out
 
             sanitized_agent_result = _sanitize_agent_result(agent_result)
@@ -694,25 +678,26 @@ if isinstance(detect_output_dir, str) and detect_output_dir:
             if os.path.exists(missing_csv_path):
                 try:
                     missing_df = pd.read_csv(missing_csv_path)
+                    if not missing_df.empty:
+                        with st.expander("⚠️ Missing Modality Samples", expanded=False):
+                            st.caption(
+                                f"Found {len(missing_df)} samples with incomplete B/M pairs (not included in prediction)"
+                            )
+                            st.dataframe(missing_df, use_container_width=True)
+
+                            st.download_button(
+                                label="📥 Download Missing Modality CSV",
+                                data=missing_df.to_csv(index=False, encoding="utf-8-sig"),
+                                file_name="missing_modality_samples.csv",
+                                mime="text/csv",
+                                use_container_width=True,
+                            )    
                 except Exception:
                     missing_df = None
 
-                if missing_df is not None and not missing_df.empty:
-                    with st.expander("⚠️ Missing Modality Samples", expanded=False):
-                        st.caption(
-                            f"Found {len(missing_df)} samples with incomplete B/M pairs (not included in prediction)"
-                        )
-                        st.dataframe(missing_df, use_container_width=True)
-
-                        st.download_button(
-                            label="📥 Download Missing Modality CSV",
-                            data=missing_df.to_csv(index=False, encoding="utf-8-sig"),
-                            file_name="missing_modality_samples.csv",
-                            mime="text/csv",
-                            use_container_width=True,
-                        )
         except Exception as e:
             st.error(f"Failed to read CSV outputs: {e}")
 
 st.markdown("---")
 st.caption("Developed by AIMSLab")
+
