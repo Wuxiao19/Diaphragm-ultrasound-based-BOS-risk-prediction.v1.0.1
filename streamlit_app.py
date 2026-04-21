@@ -266,8 +266,8 @@ def _render_agent_result(ar: dict) -> None:
                 for p in upload_root.rglob(filename):
                     if p.is_file():
                         return str(p)
-            except Exception:
-                pass
+            except Exception as e:
+                st.error(f"Failed to search image under uploaded_inputs: {e}")
 
             # 2) Search under detect_output_dir (if available)
             try:
@@ -278,8 +278,8 @@ def _render_agent_result(ar: dict) -> None:
                         for p in detect_path.rglob(filename):
                             if p.is_file():
                                 return str(p)
-            except Exception:
-                pass
+            except Exception as e:
+                st.error(f"Failed to search image under detect output directory: {e}")
 
             return None
 
@@ -458,8 +458,6 @@ st.subheader(
     ),
 )
 
-reference_context = None
-
 if input_mode == "single":
     ref_col1, ref_col2, ref_col3 = st.columns(3)
     with ref_col1:
@@ -548,8 +546,8 @@ if st.button("🚀 Run LLM Agent", type="primary"):
                 for child in upload_root.iterdir():
                     if child.is_dir():
                         shutil.rmtree(child, ignore_errors=True)
-            except Exception:
-                pass
+            except Exception as e:
+                st.error(f"Failed to clean previous uploaded inputs: {e}")
 
             if input_mode == "single":
                 if not ("b_file" in locals() and b_file) or not ("m_file" in locals() and m_file):
@@ -665,9 +663,8 @@ if st.button("🚀 Run LLM Agent", type="primary"):
 if st.session_state.get("agent_result"):
     try:
         _render_agent_result(st.session_state.get("agent_result"))
-    except Exception:
-        # Rendering failures should not block the main flow
-        pass
+    except Exception as e:
+        st.error(f"Failed to render LLM agent result: {e}")
 
 # ====================================================
 # Global: show CSV preview and download 
@@ -719,10 +716,8 @@ if isinstance(detect_output_dir, str) and detect_output_dir:
                             mime="text/csv",
                             use_container_width=True,
                         )
-        except Exception:
-            # If reading fails, skip table and downloads
-            pass
+        except Exception as e:
+            st.error(f"Failed to read CSV outputs: {e}")
 
 st.markdown("---")
 st.caption("Developed by AIMSLab")
-
