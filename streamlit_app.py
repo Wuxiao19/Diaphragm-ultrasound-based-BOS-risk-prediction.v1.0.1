@@ -224,24 +224,18 @@ def render_image_uploader(label_prefix: str, input_mode: str):
         on_change=_on_file_uploader_change,
     )
 
-def _sanitize_agent_result(ar):
-    """Sanitize agent_result into a serializable structure for session_state, to avoid non-serializable objects (Path, DataFrame, handles) on rerun"""
-    if not isinstance(ar, dict):
-        return ar
-    out = {}
-    for k, v in ar.items():
-        try:
-            if hasattr(v, "to_dict") and callable(getattr(v, "to_dict")):
-                out[k] = v.to_dict()
-            elif isinstance(v, (np.integer, np.floating)):
-                out[k] = v.item()
-            elif isinstance(v, (list, tuple)):
-                out[k] = [e.to_dict() if hasattr(e, "to_dict") else e for e in v]
-            else:
-                out[k] = v
-        except Exception:
-            out[k] = json.loads(json.dumps(v, default=str))
-    return out
+def _sanitize_agent_result(value):
+    if value is None:
+        return None
+    if isinstance(value, (str, int, float, bool)):
+        return value
+    if isinstance(value, (np.integer, np.floating)):
+        return value.item()
+    if isinstance(value, dict):
+        return {k: _sanitize_agent_result(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_sanitize_agent_result(v) for v in value]
+    return str(value)
 
 # Initialize session_state
 st.session_state.setdefault("detect_output_dir", None)
@@ -520,8 +514,6 @@ if st.button("🚀 Run LLM Agent", type="primary"):
         st.error("Please set llm_api_key in secrets.toml.")
     else:
         try:
-            # Before saving new uploads, remove old uploaded_inputs subdirs
-            # to avoid mixing old files into this MCP run.
             try:
                 upload_root = ensure_upload_dir()
                 for child in upload_root.iterdir():
