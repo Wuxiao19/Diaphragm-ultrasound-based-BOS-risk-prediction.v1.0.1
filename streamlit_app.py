@@ -519,12 +519,6 @@ if st.button("🚀 Run LLM Agent", type="primary"):
     if not final_llm_key:
         st.error("Please set llm_api_key in secrets.toml.")
     else:
-        # Prepare local paths for the agent based on input mode
-        b_path_for_agent = None
-        m_path_for_agent = None
-        b_folder_for_agent = None
-        m_folder_for_agent = None
-
         try:
             # Before saving new uploads, remove old uploaded_inputs subdirs
             # to avoid mixing old files into this MCP run.
@@ -535,6 +529,8 @@ if st.button("🚀 Run LLM Agent", type="primary"):
                         shutil.rmtree(child, ignore_errors=True)
             except Exception as e:
                 st.error(f"Failed to clean previous uploaded inputs: {e}")
+            
+            agent_kwargs = {"api_key": final_llm_key}
 
             if input_mode == "single":
                 if not b_file or not m_file:
@@ -545,9 +541,11 @@ if st.button("🚀 Run LLM Agent", type="primary"):
                 b_abs = save_uploaded_file(b_file, _new_run_subdir("B_single_agent"))
                 m_abs = save_uploaded_file(m_file, _new_run_subdir("M_single_agent"))
 
-                # Pass absolute paths to avoid MCP mixing old files under uploaded_inputs
-                b_path_for_agent = str(Path(b_abs).resolve())
-                m_path_for_agent = str(Path(m_abs).resolve())
+                agent_kwargs.update({
+                    "b_image_path": str(Path(b_abs).resolve()),
+                    "m_image_path": str(Path(m_abs).resolve()),
+                    "single_reference_factors": (reference_context or {}).get("single_values"),
+                })
 
             else:  # folder mode
                 if not b_files:
@@ -560,32 +558,22 @@ if st.button("🚀 Run LLM Agent", type="primary"):
                 b_abs_dir = save_uploaded_files_as_folder(b_files, _new_run_subdir("B_folder_agent"))
                 m_abs_dir = save_uploaded_files_as_folder(m_files, _new_run_subdir("M_folder_agent"))
 
-                # Pass absolute directories to avoid MCP scanning other old uploads
-                b_folder_for_agent = str(Path(b_abs_dir).resolve())
-                m_folder_for_agent = str(Path(m_abs_dir).resolve())
+                agent_kwargs.update({
+                    "b_folder_path": str(Path(b_abs_dir).resolve()),
+                    "m_folder_path": str(Path(m_abs_dir).resolve()),
+                    "batch_reference_records": (reference_context or {}).get("batch_df"),
+                    "batch_reference_filename": (reference_context or {}).get("source_filename"),
+                })
 
             # Clear previous results when starting a new agent run
             st.session_state.pop("agent_result", None)
             st.session_state["reference_context"] = reference_context or {}
 
             with st.spinner("🤖 LLM Agent is working: calling detection tools and generating analysis..."):
-                if b_path_for_agent and m_path_for_agent:
-                    agent_result = asyncio.run(run_llm_agent(
-                        b_image_path=b_path_for_agent,
-                        m_image_path=m_path_for_agent,
-                        api_key=final_llm_key,
-                        single_reference_factors=(reference_context or {}).get("single_values"),
-                    ))
-                elif b_folder_for_agent and m_folder_for_agent:
-                    agent_result = asyncio.run(run_llm_agent(
-                        b_folder_path=b_folder_for_agent,
-                        m_folder_path=m_folder_for_agent,
-                        api_key=final_llm_key,
-                        batch_reference_records=(reference_context or {}).get("batch_df"),
-                        batch_reference_filename=(reference_context or {}).get("source_filename"),
-                    ))
-                else:
-                    raise ValueError("Unable to determine single or batch mode. Please check your uploads.")
+                try:
+                    agent_result = asyncio.run(run_llm_agent(**agent_kwargs))
+                except Exception as e:
+                    st.error("Unable to determine single or batch mode. Please check your uploads.")
 
             st.success("✅ LLM Agent analysis complete!")
 
