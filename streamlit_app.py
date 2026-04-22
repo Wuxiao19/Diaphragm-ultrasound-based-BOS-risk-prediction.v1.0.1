@@ -91,30 +91,28 @@ def load_reference_table(uploaded_file) -> pd.DataFrame:
 
 def normalize_reference_df(df: pd.DataFrame) -> pd.DataFrame:
     """Normalize uploaded reference-factor columns."""
+    COLUMN_ALIASES = {
+    "sex": "Sex",
+    "age": "Age",
+    "bmi": "BMI",
+    "complication": "Complication",
+    "cgvhd": "cGVHD",
+    "time-hsct": "Time-HSCT",
+    "time_hsct": "Time-HSCT",
+    "time hsct": "Time-HSCT",
+    "merged_key": "merged_key",
+    "patient_id": "patient_id",
+    "date": "date",
+    }
+
     normalized = df.copy()
     normalized.columns = [str(c).strip() for c in normalized.columns]
 
     rename_map = {}
     for col in normalized.columns:
-        lower_col = col.lower()
-        if lower_col == "sex":
-            rename_map[col] = "Sex"
-        elif lower_col == "age":
-            rename_map[col] = "Age"
-        elif lower_col == "bmi":
-            rename_map[col] = "BMI"
-        elif lower_col == "complication":
-            rename_map[col] = "Complication"
-        elif lower_col == "cgvhd":
-            rename_map[col] = "cGVHD"
-        elif lower_col in {"time-hsct", "time_hsct", "time hsct"}:
-            rename_map[col] = "Time-HSCT"
-        elif lower_col == "merged_key":
-            rename_map[col] = "merged_key"
-        elif lower_col == "patient_id":
-            rename_map[col] = "patient_id"
-        elif lower_col == "date":
-            rename_map[col] = "date"
+        canonical = COLUMN_ALIASES.get(col.lower())
+        if canonical:
+            rename_map[col] = canonical
 
     normalized = normalized.rename(columns=rename_map)
     if "date" in normalized.columns:
@@ -514,14 +512,13 @@ if st.button("🚀 Run LLM Agent", type="primary"):
         st.error("Please set llm_api_key in secrets.toml.")
     else:
         try:
-            try:
-                upload_root = ensure_upload_dir()
-                for child in upload_root.iterdir():
-                    if child.is_dir():
-                        shutil.rmtree(child, ignore_errors=True)
-            except Exception as e:
-                st.error(f"Failed to clean previous uploaded inputs: {e}")
-            
+            upload_root = ensure_upload_dir()
+            for child in upload_root.iterdir():
+                if child.is_dir():
+                    shutil.rmtree(child, ignore_errors=True)
+        except Exception as e:
+            st.error(f"Failed to clean previous uploaded inputs: {e}")
+        try:                    
             agent_kwargs = {"api_key": final_llm_key}
 
             if input_mode == "single":
@@ -642,7 +639,8 @@ if isinstance(detect_output_dir, str) and detect_output_dir:
                                 mime="text/csv",
                                 use_container_width=True,
                             )    
-                except Exception:
+                except Exception as e:
+                    st.error(f"Failed to read missing modality CSV: {e}")
                     missing_df = None
 
         except Exception as e:
@@ -650,4 +648,3 @@ if isinstance(detect_output_dir, str) and detect_output_dir:
 
 st.markdown("---")
 st.caption("Developed by AIMSLab")
-
