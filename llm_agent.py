@@ -25,8 +25,8 @@ import time
 # DEFAULT_LLM_MODEL = "Qwen/Qwen3-8B"
 # DEFAULT_LLM_BASE_URL = "https://right.codes/codex/v1"
 # DEFAULT_LLM_MODEL = "gpt-5.3-codex"
-DEFAULT_LLM_BASE_URL = "https://api.aipaibox.com/"
-DEFAULT_LLM_MODEL = "gemini-2.5-flash"
+DEFAULT_LLM_BASE_URL = "https://api.aipaibox.com/v1"
+DEFAULT_LLM_MODEL = "gpt-5.4"
 
 
 def get_llm_client(api_key: str, base_url: str = DEFAULT_LLM_BASE_URL) -> OpenAI:
