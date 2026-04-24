@@ -18,16 +18,94 @@ import shutil
 import time
 
 # ============================================================
+# BOS literature knowledge loader
+# ============================================================
+
+_PAPER_DIR = Path(__file__).resolve().parent / "paper"
+
+_PAPER_META = [
+    {
+        "file": "BOS diagnosis-NIH.pdf",
+        "label": "NIH 2014 Chronic GVHD Diagnosis & Staging Consensus",
+        "key_sections": ["diagnosis", "staging", "BOS criteria", "lung scoring"],
+    },
+    {
+        "file": "BOS中国指南.pdf",
+        "label": "Chinese Expert Consensus on BOS Diagnosis & Treatment (2022)",
+        "key_sections": ["diagnostic criteria", "grading", "treatment", "monitoring", "prevention"],
+    },
+    {
+        "file": "Eur Respir J-2024-Bos-Treatment.pdf",
+        "label": "ERS/EBMT 2024 Clinical Practice Guidelines on Treatment of Pulmonary cGvHD-BOS",
+        "key_sections": ["ICS/LABA", "FAM therapy", "ibrutinib", "ruxolitinib", "lung transplant", "follow-up"],
+    },
+]
+
+_bos_knowledge_cache: Optional[str] = None
+
+
+def _extract_pdf_text(pdf_path: Path) -> str:
+    """Extract plain text from a PDF file using pypdf (best-effort)."""
+    try:
+        from pypdf import PdfReader  # type: ignore
+        reader = PdfReader(str(pdf_path))
+        return "\n".join(page.extract_text() or "" for page in reader.pages)
+    except Exception:
+        return ""
+
+
+def load_bos_knowledge(max_chars_per_paper: int = 6000) -> str:
+    """
+    Load and cache BOS literature knowledge from the paper/ directory.
+
+    Extracts key clinical text from each PDF and returns a combined
+    knowledge block suitable for injection into the LLM system prompt.
+    Results are cached after the first call.
+    """
+    global _bos_knowledge_cache
+    if _bos_knowledge_cache is not None:
+        return _bos_knowledge_cache
+
+    blocks: List[str] = []
+    for meta in _PAPER_META:
+        pdf_path = _PAPER_DIR / meta["file"]
+        if not pdf_path.exists():
+            continue
+        raw_text = _extract_pdf_text(pdf_path)
+        if not raw_text.strip():
+            continue
+        # Trim to a reasonable length to avoid bloating the prompt
+        trimmed = raw_text[:max_chars_per_paper]
+        block = (
+            f"### Reference: {meta['label']}\n"
+            f"Key topics covered: {', '.join(meta['key_sections'])}\n\n"
+            f"{trimmed}"
+        )
+        blocks.append(block)
+
+    if blocks:
+        _bos_knowledge_cache = (
+            "=== BOS Clinical Literature Knowledge Base ===\n"
+            "The following excerpts are drawn from peer-reviewed guidelines and consensus documents "
+            "on Bronchiolitis Obliterans Syndrome (BOS) after allogeneic hematopoietic stem cell "
+            "transplantation (allo-HSCT). Use this knowledge to support your clinical interpretations "
+            "and suggestions. Always remind the user that model predictions cannot replace formal "
+            "clinical evaluation.\n\n"
+            + "\n\n---\n\n".join(blocks)
+        )
+    else:
+        _bos_knowledge_cache = ""
+
+    return _bos_knowledge_cache
+
+# ============================================================
 # Environment variables & LLM client initialization
 # ============================================================
 
-# DEFAULT_LLM_BASE_URL = "https://api.siliconflow.cn/v1"
-# DEFAULT_LLM_MODEL = "Qwen/Qwen3-8B"
+DEFAULT_LLM_BASE_URL = "https://api.siliconflow.cn/v1"
+DEFAULT_LLM_MODEL = "Qwen/Qwen3-8B"
 # DEFAULT_LLM_BASE_URL = "https://right.codes/codex/v1"
 # DEFAULT_LLM_MODEL = "gpt-5.3-codex"
-DEFAULT_LLM_BASE_URL = "https://api.aipaibox.com/v1"
-DEFAULT_LLM_MODEL = "gpt-5.4"
-
 
 def get_llm_client(api_key: str, base_url: str = DEFAULT_LLM_BASE_URL) -> OpenAI:
     return OpenAI(api_key=api_key, base_url=base_url)
@@ -161,6 +239,11 @@ They do not change tool selection, image-based prediction, or predicted probabil
 If such factors are provided, incorporate them cautiously into the high-risk patient analysis, high-risk patient suggestions,
 recheck patient analysis, and recheck patient suggestions when relevant.
 If they are not provided, do not speculate.
+
+When generating clinical suggestions, you may draw on the BOS literature knowledge base provided below (if any).
+Cite the specific guideline or consensus document by name (e.g., "per the Chinese Expert Consensus 2022" or
+"per the ERS/EBMT 2024 guidelines") when the suggestion is directly supported by that source.
+Do not fabricate citations or invent guideline content.
 """
 
 def _build_reference_context_message(
@@ -376,8 +459,19 @@ Please:
     # Get LLM client
     client = get_llm_client(api_key=api_key, base_url=base_url)
 
+    # Build system prompt with optional BOS literature knowledge
+    bos_knowledge = load_bos_knowledge()
+    if bos_knowledge:
+        system_content = (
+            LLM_SYSTEM_PROMPT.rstrip()
+            + "\n\n"
+            + bos_knowledge
+        )
+    else:
+        system_content = LLM_SYSTEM_PROMPT
+
     messages = [
-        {"role": "system", "content": LLM_SYSTEM_PROMPT},
+        {"role": "system", "content": system_content},
         {"role": "user", "content": user_query},
     ]
 
