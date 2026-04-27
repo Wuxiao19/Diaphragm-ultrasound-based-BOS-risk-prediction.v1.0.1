@@ -43,6 +43,19 @@ _PAPER_META = [
 
 _bos_knowledge_cache: Optional[str] = None
 
+print(
+    f"[Agent] BOS knowledge loaded: {len(bos_knowledge)} characters",
+    file=sys.stderr,
+    flush=True,
+)
+
+if bos_knowledge:
+    system_content = (
+        LLM_SYSTEM_PROMPT.rstrip()
+        + "\n\n"
+        + bos_knowledge
+    )
+
 
 def _extract_pdf_text(pdf_path: Path) -> str:
     """Extract plain text from a PDF file using pypdf (best-effort)."""
