@@ -16,17 +16,6 @@ from fastmcp import Client
 from openai import OpenAI
 import shutil
 import time
-
-# ============================================================
-# Environment variables & LLM client initialization
-# ============================================================
-
-DEFAULT_LLM_BASE_URL = "https://api.aipaibox.com/v1"
-DEFAULT_LLM_MODEL = "gpt-5.4"
-
-def get_llm_client(api_key: str, base_url: str = DEFAULT_LLM_BASE_URL) -> OpenAI:
-    return OpenAI(api_key=api_key, base_url=base_url)
-
 # ============================================================
 # BOS literature knowledge loader
 # ============================================================
@@ -102,6 +91,17 @@ def load_bos_knowledge(max_chars_per_paper: int = 6000) -> str:
         _bos_knowledge_cache = ""
 
     return _bos_knowledge_cache
+
+
+# ============================================================
+# Environment variables & LLM client initialization
+# ============================================================
+
+DEFAULT_LLM_BASE_URL = "https://api.aipaibox.com/v1"
+DEFAULT_LLM_MODEL = "gpt-5.4"
+
+def get_llm_client(api_key: str, base_url: str = DEFAULT_LLM_BASE_URL) -> OpenAI:
+    return OpenAI(api_key=api_key, base_url=base_url)
 
 # ============================================================
 # MCP client reuse & tool discovery
