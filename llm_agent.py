@@ -51,7 +51,7 @@ def _extract_pdf_text(pdf_path: Path) -> str:
         raise RuntimeError(
             f"No text extracted from PDF: {pdf_path}"
         )
-    return textr
+    return text
 
 def load_bos_knowledge(max_chars_per_paper: int = 6000) -> str:
     """Load and cache BOS literature knowledge from the paper/ directory."""
