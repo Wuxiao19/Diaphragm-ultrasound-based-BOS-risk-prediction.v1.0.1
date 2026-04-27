@@ -45,12 +45,13 @@ _bos_knowledge_cache: Optional[str] = None
 
 
 def _extract_pdf_text(pdf_path: Path) -> str:
-    """Extract plain text from a PDF file using pypdf (best-effort)."""
+    """Extract plain text from a PDF file using pypdf."""
     try:
-        from pypdf import PdfReader  # type: ignore
+        from pypdf import PdfReader
         reader = PdfReader(str(pdf_path))
         return "\n".join(page.extract_text() or "" for page in reader.pages)
-    except Exception:
+    except Exception as e:
+        print(f"Warning: Error extracting text from {pdf_path}: {e}")
         return ""
 
 
