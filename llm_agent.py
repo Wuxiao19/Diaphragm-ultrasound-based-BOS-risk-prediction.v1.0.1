@@ -56,6 +56,7 @@ _bos_knowledge_cache: Optional[str] = None
 def _extract_pdf_text(pdf_path: Path) -> str:
     """Extract plain text from a PDF file using pypdf."""
     from pypdf import PdfReader
+    print(f"loading pypdf success", file=sys.stderr, flush=True)
     reader = PdfReader(str(pdf_path))
     text = "\n".join(page.extract_text() or "" for page in reader.pages)
     if not text.strip():
