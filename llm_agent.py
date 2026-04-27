@@ -16,6 +16,7 @@ from fastmcp import Client
 from openai import OpenAI
 import shutil
 import time
+
 # ============================================================
 # BOS literature knowledge loader
 # ============================================================
@@ -42,19 +43,25 @@ _PAPER_META = [
 
 _bos_knowledge_cache: Optional[str] = None
 
+
 def _extract_pdf_text(pdf_path: Path) -> str:
-    """Extract plain text from a PDF file using pypdf."""
-    from pypdf import PdfReader
-    reader = PdfReader(str(pdf_path))
-    text = "\n".join(page.extract_text() or "" for page in reader.pages)
-    if not text.strip():
-        raise RuntimeError(
-            f"No text extracted from PDF: {pdf_path}"
-        )
-    return text
+    """Extract plain text from a PDF file using pypdf (best-effort)."""
+    try:
+        from pypdf import PdfReader  # type: ignore
+        reader = PdfReader(str(pdf_path))
+        return "\n".join(page.extract_text() or "" for page in reader.pages)
+    except Exception:
+        return ""
+
 
 def load_bos_knowledge(max_chars_per_paper: int = 6000) -> str:
-    """Load and cache BOS literature knowledge from the paper/ directory."""
+    """
+    Load and cache BOS literature knowledge from the paper/ directory.
+
+    Extracts key clinical text from each PDF and returns a combined
+    knowledge block suitable for injection into the LLM system prompt.
+    Results are cached after the first call.
+    """
     global _bos_knowledge_cache
     if _bos_knowledge_cache is not None:
         return _bos_knowledge_cache
@@ -91,16 +98,14 @@ def load_bos_knowledge(max_chars_per_paper: int = 6000) -> str:
 
     return _bos_knowledge_cache
 
-
 # ============================================================
 # Environment variables & LLM client initialization
 # ============================================================
 
-DEFAULT_LLM_BASE_URL = "https://api.aipaibox.com/v1"
-DEFAULT_LLM_MODEL = "gpt-5.4"
-
-# DEFAULT_LLM_BASE_URL = "https://api.siliconflow.cn/v1"
-# DEFAULT_LLM_MODEL = "Qwen/Qwen3-8B"
+DEFAULT_LLM_BASE_URL = "https://api.siliconflow.cn/v1"
+DEFAULT_LLM_MODEL = "Qwen/Qwen3-8B"
+# DEFAULT_LLM_BASE_URL = "https://right.codes/codex/v1"
+# DEFAULT_LLM_MODEL = "gpt-5.3-codex"
 
 def get_llm_client(api_key: str, base_url: str = DEFAULT_LLM_BASE_URL) -> OpenAI:
     return OpenAI(api_key=api_key, base_url=base_url)
