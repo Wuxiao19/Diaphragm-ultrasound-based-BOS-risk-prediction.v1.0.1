@@ -15,3 +15,4 @@ pydantic
 openai
 python-dotenv
 openpyxl
+pypdf
