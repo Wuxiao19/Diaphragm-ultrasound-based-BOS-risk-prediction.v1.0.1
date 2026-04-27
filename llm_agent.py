@@ -102,10 +102,8 @@ def load_bos_knowledge(max_chars_per_paper: int = 6000) -> str:
 # Environment variables & LLM client initialization
 # ============================================================
 
-DEFAULT_LLM_BASE_URL = "https://api.siliconflow.cn/v1"
-DEFAULT_LLM_MODEL = "Qwen/Qwen3-8B"
-# DEFAULT_LLM_BASE_URL = "https://right.codes/codex/v1"
-# DEFAULT_LLM_MODEL = "gpt-5.3-codex"
+DEFAULT_LLM_BASE_URL = "https://api.aipaibox.com/v1"
+DEFAULT_LLM_MODEL = "gpt-5.4"
 
 def get_llm_client(api_key: str, base_url: str = DEFAULT_LLM_BASE_URL) -> OpenAI:
     return OpenAI(api_key=api_key, base_url=base_url)
