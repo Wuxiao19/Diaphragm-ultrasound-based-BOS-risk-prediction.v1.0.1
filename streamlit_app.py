@@ -558,12 +558,7 @@ if st.button("🚀 Run LLM Agent", type="primary"):
             st.session_state["reference_context"] = reference_context or {}
 
             with st.spinner("🤖 LLM Agent is working: calling detection tools and generating analysis..."):
-                try:
-                    agent_result = asyncio.run(run_llm_agent(**agent_kwargs))
-                except Exception as e:
-                    st.error("Unable to determine single or batch mode. Please check your uploads.")
-
-            st.success("✅ LLM Agent analysis complete!")
+                agent_result = asyncio.run(run_llm_agent(**agent_kwargs))
 
             sanitized_agent_result = _sanitize_agent_result(agent_result)
             st.session_state["agent_result"] = sanitized_agent_result
@@ -580,6 +575,8 @@ if st.button("🚀 Run LLM Agent", type="primary"):
             
             if detect_output_dir:
                 st.session_state["detect_output_dir"] = detect_output_dir
+
+            st.success("✅ LLM Agent analysis complete!")
 
         except Exception as e:
             st.error(f"❌ LLM Agent failed: {e}")
