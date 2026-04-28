@@ -47,7 +47,7 @@ _bos_knowledge_cache: Optional[str] = None
 def _extract_pdf_text(pdf_path: Path) -> str:
     """Extract plain text from a PDF file using pypdf (best-effort)."""
     try:
-        from pypdf import PdfReader
+        from pypdf import PdfReader  # type: ignore
         reader = PdfReader(str(pdf_path))
         return "\n".join(page.extract_text() or "" for page in reader.pages)
     except Exception:
@@ -55,7 +55,13 @@ def _extract_pdf_text(pdf_path: Path) -> str:
 
 
 def load_bos_knowledge(max_chars_per_paper: int = 6000) -> str:
-    """Load and cache BOS literature knowledge from the paper/ directory."""
+    """
+    Load and cache BOS literature knowledge from the paper/ directory.
+
+    Extracts key clinical text from each PDF and returns a combined
+    knowledge block suitable for injection into the LLM system prompt.
+    Results are cached after the first call.
+    """
     global _bos_knowledge_cache
     if _bos_knowledge_cache is not None:
         return _bos_knowledge_cache
