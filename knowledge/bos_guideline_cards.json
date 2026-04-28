@@ -1,0 +1,86 @@
+[
+  {
+    "id": "diagnosis_nih_2014",
+    "source": "NIH 2014 Chronic GVHD Diagnosis & Staging Consensus",
+    "pages": "10, 24-27",
+    "applies_to": ["diagnosis", "staging", "lung score", "BOS criteria"],
+    "keywords": [
+      "diagnosis",
+      "diagnostic",
+      "staging",
+      "lung score",
+      "FEV1",
+      "FEV1/VC",
+      "BOS criteria",
+      "NIH",
+      "cGVHD",
+      "诊断",
+      "分级"
+    ],
+    "content": "Use this card when explaining BOS diagnostic criteria or NIH chronic GVHD severity. The NIH 2014 consensus describes BOS as sufficient to establish lung chronic GVHD for clinical-trial purposes when obstruction is present, FEV1 is reduced with decline over time, infection is excluded, and supportive pulmonary features such as air trapping or small airway disease are present. It also links lung scores to global cGVHD severity: lung score 0 is compatible with mild disease, lung score 1 contributes to moderate disease, and lung score 2-3 indicates severe chronic GVHD."
+  },
+  {
+    "id": "treatment_chinese_2022",
+    "source": "Chinese Expert Consensus on BOS Diagnosis & Treatment (2022)",
+    "pages": "2-5",
+    "applies_to": ["diagnosis workflow", "initial treatment", "monitoring", "screening"],
+    "keywords": [
+      "treatment",
+      "FAM",
+      "azithromycin",
+      "montelukast",
+      "steroid",
+      "budesonide",
+      "formoterol",
+      "screening",
+      "monitoring",
+      "治疗",
+      "推荐",
+      "肺功能",
+      "随访",
+      "筛查"
+    ],
+    "content": "Use this card for practical diagnosis and treatment suggestions in the Chinese consensus context. The 2022 consensus emphasizes early recognition after allo-HSCT, pulmonary function testing, high-resolution CT with inspiratory and expiratory phases, exclusion of infection, and careful consideration of biopsy only in experienced centers. For newly diagnosed BOS, it recommends systemic glucocorticoids combined with FAM therapy as an initial treatment option and allows budesonide/formoterol inhalation as adjunct therapy with corticosteroids and/or calcineurin inhibitors when clinically appropriate."
+  },
+  {
+    "id": "treatment_ers_ebmt_2024",
+    "source": "ERS/EBMT 2024 Clinical Practice Guidelines on Treatment of Pulmonary cGvHD-BOS",
+    "pages": "5-13, 18-19",
+    "applies_to": ["ICS/LABA", "FAM", "ruxolitinib", "ibrutinib", "ECP", "lung transplant"],
+    "keywords": [
+      "ICS",
+      "LABA",
+      "FAM",
+      "ruxolitinib",
+      "ibrutinib",
+      "belumosudil",
+      "ECP",
+      "lung transplant",
+      "progressive",
+      "end-stage",
+      "treatment"
+    ],
+    "content": "Use this card for adult pulmonary cGvHD-BOS treatment options. The ERS/EBMT 2024 guideline supports considering inhaled corticosteroids with or without LABA and discusses FAM, ruxolitinib, belumosudil, extracorporeal photopheresis, and lung transplantation according to disease course, prior therapy, availability, adverse effects, and severity. It stresses treatment monitoring with symptoms, adverse events, and lung function rather than using any single therapy as universally appropriate."
+  },
+  {
+    "id": "followup_rehab_ers_ebmt_2024",
+    "source": "ERS/EBMT 2024 Clinical Practice Guidelines on Treatment of Pulmonary cGvHD-BOS",
+    "pages": "14-16, 20",
+    "applies_to": ["PFT follow-up", "CT follow-up", "home spirometry", "pulmonary rehabilitation"],
+    "keywords": [
+      "follow-up",
+      "spirometry",
+      "PFT",
+      "CT",
+      "rehabilitation",
+      "oxygen",
+      "rapid decline",
+      "FEV1",
+      "recheck",
+      "monitoring",
+      "随访",
+      "康复"
+    ],
+    "content": "Use this card for follow-up and rehabilitation suggestions. The ERS/EBMT 2024 guideline suggests full PFT at BOS diagnosis, annually thereafter, and when clinically indicated, with more frequent spirometry after diagnosis or clinical instability. It also supports high-resolution chest CT at diagnosis and when indicated, attention to respiratory infections and symptoms, and pulmonary rehabilitation as supportive care to improve dyspnea, exercise tolerance, and functional status."
+  }
+]
