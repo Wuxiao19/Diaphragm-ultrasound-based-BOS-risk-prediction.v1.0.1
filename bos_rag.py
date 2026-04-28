@@ -170,8 +170,8 @@ def _build_bos_rag_index() -> Dict[str, Any]:
             from rank_bm25 import BM25Okapi  # type: ignore
 
             bm25 = BM25Okapi(tokenized_corpus)
-        except Exception:
-            bm25 = None
+        except Exception as error:
+            raise RuntimeError("BM25 index build failed") from error
 
     index: Dict[str, Any] = {
         "chunks": chunks,
