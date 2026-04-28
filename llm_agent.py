@@ -54,7 +54,7 @@ def _extract_pdf_text(pdf_path: Path) -> str:
         return ""
 
 
-def load_bos_knowledge(max_chars_per_paper: int = 2000) -> str:
+def load_bos_knowledge(max_chars_per_paper: int = 1000) -> str:
     """
     Load and cache BOS literature knowledge from the paper/ directory.
 
