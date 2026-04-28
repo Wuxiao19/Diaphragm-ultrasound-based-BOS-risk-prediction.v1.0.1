@@ -116,6 +116,18 @@ def _chunk_text(text: str, max_chars: int = 900, overlap: int = 150) -> List[str
     return chunks
 
 
+def _tokenize_for_bm25(text: str) -> List[str]:
+    """Tokenize mixed English/Chinese clinical text for local BM25 retrieval."""
+    normalized = _normalize_literature_text(text).lower()
+    latin_tokens = re.findall(r"[a-z0-9][a-z0-9/+_.-]*", normalized)
+    cjk_chars = re.findall(r"[\u4e00-\u9fff]", normalized)
+    cjk_bigrams = [
+        "".join(cjk_chars[index:index + 2])
+        for index in range(len(cjk_chars) - 1)
+    ]
+    return latin_tokens + cjk_chars + cjk_bigrams
+
+
 def _build_bos_rag_index() -> Dict[str, Any]:
     """Build and cache the local BOS literature retrieval index."""
     global _bos_rag_index_cache
@@ -123,6 +135,7 @@ def _build_bos_rag_index() -> Dict[str, Any]:
         return _bos_rag_index_cache
 
     chunks: List[Dict[str, Any]] = []
+    tokenized_corpus: List[List[str]] = []
     for meta in PAPER_META:
         pdf_path = PAPER_DIR / meta["file"]
         if not pdf_path.exists():
@@ -140,35 +153,31 @@ def _build_bos_rag_index() -> Dict[str, Any]:
                     }
                 )
 
-    index: Dict[str, Any] = {"chunks": chunks, "vectorizer": None, "matrix": None}
-    if chunks:
-        try:
-            from sklearn.feature_extraction.text import TfidfVectorizer
+    for chunk in chunks:
+        searchable_text = " ".join(
+            [
+                str(chunk["source"]),
+                str(chunk["section"]),
+                " ".join(chunk.get("key_sections", [])),
+                str(chunk["text"]),
+            ]
+        )
+        tokenized_corpus.append(_tokenize_for_bm25(searchable_text))
 
-            vectorizer = TfidfVectorizer(
-                analyzer="char",
-                ngram_range=(2, 5),
-                lowercase=True,
-                max_features=50000,
-            )
-            matrix = vectorizer.fit_transform(
-                [
-                    " ".join(
-                        [
-                            str(chunk["source"]),
-                            str(chunk["section"]),
-                            " ".join(chunk.get("key_sections", [])),
-                            str(chunk["text"]),
-                        ]
-                    )
-                    for chunk in chunks
-                ]
-            )
-            index["vectorizer"] = vectorizer
-            index["matrix"] = matrix
+    bm25 = None
+    if tokenized_corpus:
+        try:
+            from rank_bm25 import BM25Okapi  # type: ignore
+
+            bm25 = BM25Okapi(tokenized_corpus)
         except Exception:
-            index["vectorizer"] = None
-            index["matrix"] = None
+            bm25 = None
+
+    index: Dict[str, Any] = {
+        "chunks": chunks,
+        "bm25": bm25,
+        "tokenized_corpus": tokenized_corpus,
+    }
 
     _bos_rag_index_cache = index
     return index
@@ -205,6 +214,19 @@ def _score_guideline_card(card: Dict[str, Any], query: str) -> int:
             score += 5
         score += 1
     return score
+
+
+def _bm25_scores(index: Dict[str, Any], query: str) -> List[float]:
+    """Calculate BM25 scores for all indexed PDF chunks with rank_bm25."""
+    query_terms = _tokenize_for_bm25(query)
+    if not query_terms:
+        return []
+
+    bm25 = index.get("bm25")
+    if bm25 is None:
+        return []
+
+    return [float(score) for score in bm25.get_scores(query_terms)]
 
 
 def retrieve_bos_context(
@@ -250,14 +272,11 @@ def retrieve_bos_context(
         used_chars += len(card_text)
 
     chunks = index.get("chunks") or []
-    vectorizer = index.get("vectorizer")
-    matrix = index.get("matrix")
     selected_chunks: List[Dict[str, Any]] = []
 
-    if chunks and vectorizer is not None and matrix is not None:
+    if chunks:
         try:
-            query_vector = vectorizer.transform([query])
-            scores = (matrix @ query_vector.T).toarray().ravel()
+            scores = _bm25_scores(index, query)
             ranked_indices = sorted(range(len(scores)), key=lambda idx: scores[idx], reverse=True)
             seen = set()
             for idx in ranked_indices:
