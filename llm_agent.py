@@ -22,11 +22,11 @@ from bos_rag import flatten_for_retrieval, retrieve_bos_context
 # Environment variables & LLM client initialization
 # ============================================================
 
-DEFAULT_LLM_BASE_URL = "https://api.aipaibox.com/v1"
-DEFAULT_LLM_MODEL = "gpt-5.4"
+# DEFAULT_LLM_BASE_URL = "https://api.aipaibox.com/v1"
+# DEFAULT_LLM_MODEL = "gpt-5.4"
 
-# DEFAULT_LLM_BASE_URL = "https://api.siliconflow.cn/v1"
-# DEFAULT_LLM_MODEL = "Qwen/Qwen3-8B"
+DEFAULT_LLM_BASE_URL = "https://api.siliconflow.cn/v1"
+DEFAULT_LLM_MODEL = "Qwen/Qwen3-8B"
 
 def get_llm_client(api_key: str, base_url: str = DEFAULT_LLM_BASE_URL) -> OpenAI:
     return OpenAI(api_key=api_key, base_url=base_url)
