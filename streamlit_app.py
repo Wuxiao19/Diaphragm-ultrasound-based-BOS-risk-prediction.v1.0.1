@@ -555,6 +555,7 @@ if st.button("🚀 Run LLM Agent", type="primary"):
 
             # Clear previous results when starting a new agent run
             st.session_state.pop("agent_result", None)
+            st.session_state["detect_output_dir"] = None
             st.session_state["reference_context"] = reference_context or {}
 
             with st.spinner("🤖 LLM Agent is working: calling detection tools and generating analysis..."):
