@@ -22,11 +22,11 @@ from bos_rag import flatten_for_retrieval, retrieve_bos_context
 # Environment variables & LLM client initialization
 # ============================================================
 
-DEFAULT_LLM_BASE_URL = "https://api.aipaibox.com/v1"
-DEFAULT_LLM_MODEL = "gpt-5.4"
+# DEFAULT_LLM_BASE_URL = "https://api.aipaibox.com/v1"
+# DEFAULT_LLM_MODEL = "gpt-5.4"
 
-# DEFAULT_LLM_BASE_URL = "https://api.siliconflow.cn/v1"
-# DEFAULT_LLM_MODEL = "Qwen/Qwen3-8B"
+DEFAULT_LLM_BASE_URL = "https://api.siliconflow.cn/v1"
+DEFAULT_LLM_MODEL = "Qwen/Qwen3-8B"
 
 def get_llm_client(api_key: str, base_url: str = DEFAULT_LLM_BASE_URL) -> OpenAI:
     return OpenAI(api_key=api_key, base_url=base_url)
@@ -136,16 +136,21 @@ Your tasks:
 2. Categorize risk by risk_probability (e.g., very low, low, medium, high, very high) and provide reasonable threshold descriptions.
 3. For batch results:
     - Highlight high-risk patients (risk_probability > 0.6) with ID, date, and probability.
+    - Summarize low-risk patients (risk_probability < 0.3) with ID, date, and probability when present.
+    - For low-risk patients, explain that low image-based risk does not rule out BOS or future deterioration, especially if symptoms or clinical risk factors exist.
     - Pay special attention to repeat exams for the same patient ID and analyze risk trends across dates.
 4. If missing modality cases exist (only B or only M), note them explicitly:
     - Specify which modality is missing (B or M).
     - This project does not provide single-modality prediction, so no prediction is available for those cases.
 5. Provide at least 1–3 clinical or management suggestions (e.g., further exams, rechecks, follow-ups, rehab training, or clinical evaluation).
+   Include separate low-risk suggestions when low-risk patients are present, focusing on routine monitoring, symptom awareness, periodic reassessment, and clinical review if symptoms or cGVHD activity appear.
 6. Clearly remind that this is a machine learning result based on images and cannot replace a doctor's final diagnosis.
 7. Structure the output in this order:
     - Sample details summary (brief)
     - High-risk patient analysis
     - High-risk patient suggestions
+    - Low-risk patient analysis (if any)
+    - Low-risk patient suggestions (if any)
     - Recheck patient analysis (if any)
     - Recheck patient suggestions (if any)
     - Missing modality analysis (if any)
@@ -158,7 +163,7 @@ Additional optional clinical factors may be provided separately, including Sex, 
 These factors are reference-only context for interpretation and suggestions.
 They do not change tool selection, image-based prediction, or predicted probability.
 If such factors are provided, incorporate them cautiously into the high-risk patient analysis, high-risk patient suggestions,
-recheck patient analysis, and recheck patient suggestions when relevant.
+low-risk patient analysis, low-risk patient suggestions, recheck patient analysis, and recheck patient suggestions when relevant.
 If they are not provided, do not speculate.
 
 When generating clinical suggestions, you may draw on BOS guideline context provided after tool execution (if any).
@@ -181,7 +186,7 @@ def _build_reference_context_message(
         if clean_single:
             return (
                 "The following optional clinical reference factors were provided for this single case. "
-                "Use them only as supportive context within the high-risk or recheck-related analysis and suggestions when relevant. "
+                "Use them only as supportive context within the high-risk, low-risk, or recheck-related analysis and suggestions when relevant. "
                 "Do not treat them as model inputs and do not alter the image-based prediction:\n\n"
                 f"{json.dumps(clean_single, ensure_ascii=False, indent=2)}"
             )
@@ -198,7 +203,7 @@ def _build_reference_context_message(
             return (
                 "An optional batch clinical reference table was uploaded for interpretation only. "
                 "Use it only when a record can be matched to a case by merged_key or patient/date fields, "
-                "and integrate it into high-risk or recheck-related analysis and suggestions when relevant. "
+                "and integrate it into high-risk, low-risk, or recheck-related analysis and suggestions when relevant. "
                 "Do not change the prediction outputs based on this table:\n\n"
                 f"{json.dumps(payload, ensure_ascii=False, indent=2)}"
             )
@@ -349,13 +354,14 @@ Please:
 1. Do not provide any conclusions before calling a tool; you must actually call the MCP tool before responding.
 2. Choose and call the correct detection tool based on these paths.
 3. After getting the JSON result, explain the patient's risk probability and risk level.
-4. Provide 1–3 clinical suggestions in English.
-5. Remind that this is a model prediction and cannot replace a doctor's diagnosis.
-6. As long as the user provides B/M image paths, you must call the detection tool first.
-7. Before calling a tool, do not infer risk based on assumptions.
-8. Tool calling is mandatory, not optional.
-9. The optional step is choosing which tool to call based on the input paths.
-10. Do not fake tool calls; the user can see whether you actually called the tool.
+4. If the patient is low-risk, include a low-risk interpretation and 1–3 low-risk management suggestions in English.
+5. Provide 1–3 clinical suggestions in English.
+6. Remind that this is a model prediction and cannot replace a doctor's diagnosis.
+7. As long as the user provides B/M image paths, you must call the detection tool first.
+8. Before calling a tool, do not infer risk based on assumptions.
+9. Tool calling is mandatory, not optional.
+10. The optional step is choosing which tool to call based on the input paths.
+11. Do not fake tool calls; the user can see whether you actually called the tool.
 """
         elif b_folder_path and m_folder_path:
             user_query = f"""
@@ -368,8 +374,9 @@ Please:
 2. Choose and call the correct batch detection tool.
 3. After getting the JSON result, summarize the risk distribution across patients.
 4. Identify high-risk patients (risk_probability > 0.6) and list their IDs and probabilities.
-5. Provide 1–3 clinical or management suggestions.
-6. Remind that this is a model prediction and cannot replace a doctor's diagnosis.
+5. Identify low-risk patients (risk_probability < 0.3), summarize their IDs/probabilities, and provide low-risk monitoring suggestions.
+6. Provide 1–3 clinical or management suggestions.
+7. Remind that this is a model prediction and cannot replace a doctor's diagnosis.
 """
         else:
             raise ValueError("Provide (b_image_path, m_image_path) or (b_folder_path, m_folder_path)")
@@ -480,7 +487,7 @@ Please:
                     "2) Highlight patients with rechecks and compare risk trends across dates;\n"
                     "3) If missing modality cases exist, mention them explicitly;\n"
                     "4) Use optional clinical reference factors only if they are present and match a case;\n"
-                    "5) Do not create a separate section for clinical factors; instead blend them into the high-risk or recheck-related analysis and suggestions;\n"
+                    "5) Do not create a separate section for clinical factors; instead blend them into the high-risk, low-risk, or recheck-related analysis and suggestions;\n"
                     "6) Follow the remaining system instructions as stated."
                 ),
             }
