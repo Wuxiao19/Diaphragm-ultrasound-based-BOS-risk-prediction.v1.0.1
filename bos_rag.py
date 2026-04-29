@@ -202,10 +202,20 @@ def _score_guideline_card(card: Dict[str, Any], query: str) -> int:
             score += 3
 
     card_id = card.get("id", "")
-    high_risk_terms = ["high-risk", "high risk", "risk_probability", "prediction_label", "positive"]
+    risk_probabilities = [
+        float(match)
+        for match in re.findall(r'"risk_probability"\s*:\s*([0-9]*\.?[0-9]+)', query_lower)
+    ]
+    has_high_risk_probability = any(probability > 0.6 for probability in risk_probabilities)
+    has_low_risk_probability = any(probability < 0.3 for probability in risk_probabilities)
+    high_risk_terms = ["high-risk", "high risk", "very high", "positive"]
+    low_risk_terms = ["low-risk", "low risk", "very low", "routine", "stable", "negative"]
     if card_id in {"treatment_chinese_2022", "treatment_ers_ebmt_2024", "followup_rehab_ers_ebmt_2024"}:
-        if any(term in query_lower for term in high_risk_terms):
+        if has_high_risk_probability or any(term in query_lower for term in high_risk_terms):
             score += 4
+    if card_id in {"treatment_chinese_2022", "followup_rehab_ers_ebmt_2024"}:
+        if has_low_risk_probability or any(term in query_lower for term in low_risk_terms):
+            score += 5
     if card_id == "followup_rehab_ers_ebmt_2024":
         if any(term in query_lower for term in ["recheck", "repeat", "trend", "follow-up", "followup"]):
             score += 5
