@@ -309,7 +309,7 @@ def _bm25_scores(index: Dict[str, Any], query: str) -> List[float]:
 
 
 def _format_matched_reference_information(query: str) -> str:
-    """Build tiered reference information for the final LLM report."""
+    """Build tiered reference information for integration into final analysis sections."""
     query_lower = query.lower()
     has_reference_factors = any(
         term in query_lower
@@ -319,11 +319,15 @@ def _format_matched_reference_information(query: str) -> str:
     has_missing_modality = "missing_modality" in query_lower or "missing modality" in query_lower
 
     blocks = [
-        "Matched reference information:",
+        "Tiered reference information for integrated analysis only:",
         (
-            "Use this exact three-tier structure in the final report. Mark an item as "
-            "\"present/matched\" only when it appears in the detection result or optional clinical "
-            "reference factors; otherwise state \"not provided/not assessable from current input\"."
+            "Do not output this as a standalone final-report section. Instead, integrate matched "
+            "items into the relevant High-risk, Low-risk, Recheck, or Missing modality analysis "
+            "sections. When reference information is available for a section, separate it into "
+            "BOS high-risk factors, confounding factors requiring differential diagnosis, and "
+            "poor prognostic factors. Mark an item as \"present/matched\" only when it appears "
+            "in the detection result or optional clinical reference factors; otherwise state "
+            "\"not provided/not assessable from current input\" only if that distinction is clinically useful."
         ),
     ]
 
@@ -337,17 +341,17 @@ def _format_matched_reference_information(query: str) -> str:
     if has_reference_factors:
         notes.append(
             "Optional clinical reference factors were provided; map Sex, Age, BMI, Complication, "
-            "cGVHD, and Time-HSCT into the tiers only when clinically relevant."
+            "cGVHD, and Time-HSCT into the relevant analysis section tiers only when clinically relevant."
         )
     if has_recheck:
         notes.append(
             "Recheck/follow-up data are present; use changes in risk probability across dates as "
-            "trend context under poor prognostic factors when risk is rising or persistently high."
+            "trend context under poor prognostic factors inside the recheck analysis when risk is rising or persistently high."
         )
     if has_missing_modality:
         notes.append(
             "Missing modality data are present; report them under confounding/limitations because "
-            "no single-modality prediction is available."
+            "no single-modality prediction is available, preferably inside the missing modality analysis."
         )
     if notes:
         blocks.append("Case-matching notes:")
