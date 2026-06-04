@@ -22,8 +22,8 @@ from bos_rag import flatten_for_retrieval, retrieve_bos_context
 # Environment variables & LLM client initialization
 # ============================================================
 
-DEFAULT_LLM_BASE_URL = "https://right.codes/codex/v1"
-DEFAULT_LLM_MODEL = "gpt-5.5"
+DEFAULT_LLM_BASE_URL = "https://api.aipaibox.com/v1"
+DEFAULT_LLM_MODEL = "gpt-5.4"
 
 # DEFAULT_LLM_BASE_URL = "https://api.siliconflow.cn/v1"
 # DEFAULT_LLM_MODEL = "Qwen/Qwen3-8B"
@@ -147,10 +147,6 @@ Your tasks:
 6. Clearly remind that this is a machine learning result based on images and cannot replace a doctor's final diagnosis.
 7. Structure the output in this order:
     - Sample details summary (brief)
-    - Matched reference information
-      * BOS high-risk factors
-      * Confounding factors requiring differential diagnosis
-      * Poor prognostic factors
     - High-risk patient analysis
     - High-risk patient suggestions
     - Low-risk patient analysis (if any)
@@ -174,10 +170,14 @@ When generating clinical suggestions, you may draw on BOS guideline context prov
 Cite the specific guideline or consensus document by name (e.g., "per the Chinese Expert Consensus 2022" or
 "per the ERS/EBMT 2024 guidelines") when the suggestion is directly supported by that source.
 Do not fabricate citations or invent guideline content.
-When retrieved BOS guideline context contains "Matched reference information", keep that section title in the final
-English report and organize it into the three requested tiers: BOS high-risk factors, confounding factors requiring
-differential diagnosis, and poor prognostic factors. For each tier, distinguish factors that are present or matched
-in the current case from factors that are not provided or not assessable from the current input.
+Do not create a standalone final-report section named "Matched reference information".
+When retrieved BOS guideline context contains matched reference information, integrate it into the relevant analysis
+sections instead. For each relevant analysis section, if reference information is available, separate it into:
+1) BOS high-risk factors,
+2) Confounding factors requiring differential diagnosis,
+3) Poor prognostic factors.
+Only discuss a tier when it is relevant to the current case or patient group. Distinguish factors that are present
+or matched in the current case from factors that are not provided or not assessable from the current input.
 """
 
 def _build_reference_context_message(
@@ -519,9 +519,11 @@ Please:
                     f"{bos_context}\n\n"
                     "Use this retrieved context only where clinically relevant to the detection result. "
                     "Prefer concise, source-named statements over long guideline quotations. "
-                    "If the context includes 'Matched reference information', include that section in the final "
-                    "report with the three tiers exactly as provided, and do not invent matched factors that are "
-                    "absent from the detection result or optional clinical reference factors."
+                    "Do not output 'Matched reference information' as a standalone section. Instead, when matched "
+                    "reference information exists, integrate it inside the relevant analysis sections and separate "
+                    "it into BOS high-risk factors, confounding factors requiring differential diagnosis, and poor "
+                    "prognostic factors. Do not invent matched factors that are absent from the detection result or "
+                    "optional clinical reference factors."
                 ),
             }
         )
