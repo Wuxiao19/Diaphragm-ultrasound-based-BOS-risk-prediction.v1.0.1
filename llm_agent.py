@@ -147,6 +147,10 @@ Your tasks:
 6. Clearly remind that this is a machine learning result based on images and cannot replace a doctor's final diagnosis.
 7. Structure the output in this order:
     - Sample details summary (brief)
+    - Matched reference information
+      * BOS high-risk factors
+      * Confounding factors requiring differential diagnosis
+      * Poor prognostic factors
     - High-risk patient analysis
     - High-risk patient suggestions
     - Low-risk patient analysis (if any)
@@ -170,6 +174,10 @@ When generating clinical suggestions, you may draw on BOS guideline context prov
 Cite the specific guideline or consensus document by name (e.g., "per the Chinese Expert Consensus 2022" or
 "per the ERS/EBMT 2024 guidelines") when the suggestion is directly supported by that source.
 Do not fabricate citations or invent guideline content.
+When retrieved BOS guideline context contains "Matched reference information", keep that section title in the final
+English report and organize it into the three requested tiers: BOS high-risk factors, confounding factors requiring
+differential diagnosis, and poor prognostic factors. For each tier, distinguish factors that are present or matched
+in the current case from factors that are not provided or not assessable from the current input.
 """
 
 def _build_reference_context_message(
@@ -497,6 +505,9 @@ Please:
         "user_query": user_query,
         "detection_summary": detection_summary,
         "tool_results": tool_results_dict,
+        "single_reference_factors": single_reference_factors,
+        "batch_reference_records": batch_reference_records,
+        "batch_reference_filename": batch_reference_filename,
     }
     bos_context = retrieve_bos_context(flatten_for_retrieval(retrieval_payload))
     if bos_context:
@@ -507,7 +518,10 @@ Please:
                 "content": (
                     f"{bos_context}\n\n"
                     "Use this retrieved context only where clinically relevant to the detection result. "
-                    "Prefer concise, source-named statements over long guideline quotations."
+                    "Prefer concise, source-named statements over long guideline quotations. "
+                    "If the context includes 'Matched reference information', include that section in the final "
+                    "report with the three tiers exactly as provided, and do not invent matched factors that are "
+                    "absent from the detection result or optional clinical reference factors."
                 ),
             }
         )
