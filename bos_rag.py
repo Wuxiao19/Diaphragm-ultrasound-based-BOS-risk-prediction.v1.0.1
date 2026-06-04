@@ -39,6 +39,73 @@ _bos_rag_index_cache: Optional[Dict[str, Any]] = None
 _guideline_cards_cache: Optional[List[Dict[str, Any]]] = None
 
 
+BOS_REFERENCE_INFORMATION_TIERS = [
+    {
+        "title": "BOS high-risk factors",
+        "items": [
+            (
+                "High image-based risk probability, especially >0.6 in this project, should be treated "
+                "as a model-derived risk signal that warrants clinical correlation rather than a diagnosis."
+            ),
+            (
+                "Allo-HSCT with chronic GVHD activity is clinically relevant because BOS is a pulmonary "
+                "manifestation of chronic GVHD in the NIH consensus context."
+            ),
+            (
+                "Obstructive pulmonary-function findings, FEV1 decline over time, air trapping, or small "
+                "airway disease are BOS-supportive features when infection and other causes are excluded."
+            ),
+        ],
+        "sources": [
+            "NIH 2014 Chronic GVHD Diagnosis & Staging Consensus",
+            "Chinese Expert Consensus on BOS Diagnosis & Treatment (2022)",
+        ],
+    },
+    {
+        "title": "Confounding factors requiring differential diagnosis",
+        "items": [
+            (
+                "Respiratory infection must be considered and excluded before attributing obstruction or "
+                "symptoms to BOS."
+            ),
+            (
+                "Non-BOS causes of airflow obstruction or dyspnea, including clinically documented "
+                "pulmonary complications, should be reviewed when Complication or clinical notes suggest them."
+            ),
+            (
+                "Incomplete B/M modality pairs cannot produce an image-based prediction in this project "
+                "and should be reported separately from BOS risk interpretation."
+            ),
+        ],
+        "sources": [
+            "NIH 2014 Chronic GVHD Diagnosis & Staging Consensus",
+            "Chinese Expert Consensus on BOS Diagnosis & Treatment (2022)",
+        ],
+    },
+    {
+        "title": "Poor prognostic factors",
+        "items": [
+            (
+                "NIH lung score 2-3, severe pulmonary chronic GVHD, or clinically severe obstruction "
+                "indicates more severe disease burden when documented."
+            ),
+            (
+                "Rapid decline, progressive course, clinical instability, or repeated high/rising risk "
+                "across follow-up exams should prompt closer monitoring and escalation review."
+            ),
+            (
+                "End-stage disease, oxygen requirement, or need to consider advanced therapies such as "
+                "ECP or lung transplantation reflects poor-prognosis clinical context when present."
+            ),
+        ],
+        "sources": [
+            "NIH 2014 Chronic GVHD Diagnosis & Staging Consensus",
+            "ERS/EBMT 2024 Clinical Practice Guidelines on Treatment of Pulmonary cGvHD-BOS",
+        ],
+    },
+]
+
+
 def _load_guideline_cards() -> List[Dict[str, Any]]:
     """Load structured guideline cards from knowledge/."""
     global _guideline_cards_cache
@@ -165,17 +232,19 @@ def _build_bos_rag_index() -> Dict[str, Any]:
         tokenized_corpus.append(_tokenize_for_bm25(searchable_text))
 
     bm25 = None
+    bm25_error = None
     if tokenized_corpus:
         try:
             from rank_bm25 import BM25Okapi  # type: ignore
 
             bm25 = BM25Okapi(tokenized_corpus)
         except Exception as error:
-            raise RuntimeError("BM25 index build failed") from error
+            bm25_error = str(error)
 
     index: Dict[str, Any] = {
         "chunks": chunks,
         "bm25": bm25,
+        "bm25_error": bm25_error,
         "tokenized_corpus": tokenized_corpus,
     }
 
@@ -239,6 +308,54 @@ def _bm25_scores(index: Dict[str, Any], query: str) -> List[float]:
     return [float(score) for score in bm25.get_scores(query_terms)]
 
 
+def _format_matched_reference_information(query: str) -> str:
+    """Build tiered reference information for the final LLM report."""
+    query_lower = query.lower()
+    has_reference_factors = any(
+        term in query_lower
+        for term in ["sex", "age", "bmi", "complication", "cgvhd", "time-hsct", "time_hsct"]
+    )
+    has_recheck = any(term in query_lower for term in ["recheck", "follow-up", "followup", "exam_dates"])
+    has_missing_modality = "missing_modality" in query_lower or "missing modality" in query_lower
+
+    blocks = [
+        "Matched reference information:",
+        (
+            "Use this exact three-tier structure in the final report. Mark an item as "
+            "\"present/matched\" only when it appears in the detection result or optional clinical "
+            "reference factors; otherwise state \"not provided/not assessable from current input\"."
+        ),
+    ]
+
+    for index, tier in enumerate(BOS_REFERENCE_INFORMATION_TIERS, start=1):
+        blocks.append(f"{index}. {tier['title']}")
+        for item in tier["items"]:
+            blocks.append(f"   - {item}")
+        blocks.append(f"   Sources: {', '.join(tier['sources'])}.")
+
+    notes = []
+    if has_reference_factors:
+        notes.append(
+            "Optional clinical reference factors were provided; map Sex, Age, BMI, Complication, "
+            "cGVHD, and Time-HSCT into the tiers only when clinically relevant."
+        )
+    if has_recheck:
+        notes.append(
+            "Recheck/follow-up data are present; use changes in risk probability across dates as "
+            "trend context under poor prognostic factors when risk is rising or persistently high."
+        )
+    if has_missing_modality:
+        notes.append(
+            "Missing modality data are present; report them under confounding/limitations because "
+            "no single-modality prediction is available."
+        )
+    if notes:
+        blocks.append("Case-matching notes:")
+        blocks.extend(f"- {note}" for note in notes)
+
+    return "\n".join(blocks)
+
+
 def retrieve_bos_context(
     query: str,
     max_cards: int = 4,
@@ -259,6 +376,10 @@ def retrieve_bos_context(
     index = _build_bos_rag_index()
     sections: List[str] = []
     used_chars = 0
+
+    matched_reference_text = _format_matched_reference_information(query)
+    sections.append(matched_reference_text)
+    used_chars += len(matched_reference_text)
 
     scored_cards = sorted(
         ((card, _score_guideline_card(card, query)) for card in guideline_cards),
